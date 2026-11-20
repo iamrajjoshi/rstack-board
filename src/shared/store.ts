@@ -101,8 +101,29 @@ export class Store {
       process.getBuiltinModule('node:sqlite'),
     );
     this.db = new DatabaseSync(file, { timeout: 10_000 });
-    this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+    this.enableWal();
+    this.db.exec('PRAGMA synchronous = NORMAL;');
     this.transaction(() => this.db.exec(SCHEMA));
+  }
+
+  /**
+   * Switching a new database to WAL upgrades a read lock to a write lock, and SQLite reports a
+   * busy database at once, without waiting out the timeout, when another process is opening it
+   * too. WAL mode is kept in the file, so only the first openers race: retry until one has won.
+   */
+  private enableWal(): void {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      try {
+        this.db.exec('PRAGMA journal_mode = WAL;');
+        return;
+      } catch (error) {
+        if (!isBusy(error) || Date.now() >= deadline) {
+          throw error;
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      }
+    }
   }
 
   close(): void {
@@ -671,6 +692,16 @@ export function titleOf(text: string): string {
 
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+/** SQLITE_BUSY, plain or extended. */
+function isBusy(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'errcode' in error &&
+    typeof error.errcode === 'number' &&
+    (error.errcode & 0xff) === 5
+  );
 }
 
 function suppressExperimentalWarning<T>(load: () => T): T {
