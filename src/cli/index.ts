@@ -390,6 +390,7 @@ program
         key: options.channel ? `#${options.channel}:${me()}` : `${coordinator ?? ''}:${me()}`,
         channel: options.channel || (coordinator ? `${coordinator}/workers` : 'threads'),
         author: me(),
+        person: personHandle(),
         text: readText(text, options.file),
         labels: myLabels({
           ...parseLabels(options.label),

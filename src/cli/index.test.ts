@@ -383,6 +383,31 @@ describe('checkin', () => {
   }, 30_000);
 });
 
+describe('a question on a check-in', () => {
+  it('stays in needs you through a later done check-in until the person answers', async () => {
+    const env = {
+      RSTACK_BOARD_STATE_DIR: stateDir,
+      RSTACK_BOARD_USER: 'raj',
+      BOARD_PROFILE: 'search',
+      BOARD_COORDINATOR: '',
+    };
+    const run = async (...args: string[]) =>
+      parseJson<any>((await runScript('src/cli/index.ts', ['--json', ...args], env)).stdout);
+    const done = ['checkin', '--state', 'done', '--unset', 'needs', '--', 'Done.'];
+
+    const asked = await run('checkin', '--state', 'blocked', '--needs', 'decision', '--', 'ICU?');
+    expect((await run(...done)).labels).toEqual({ needs: 'decision', state: 'done' });
+    expect((await run('read', '--label', 'needs')).threads.map((t: any) => t.id)).toEqual([
+      asked.id,
+    ]);
+
+    const store = new Store(path.join(stateDir, 'board.db'));
+    store.reply({ id: asked.id, text: 'ICU.', author: 'raj' });
+    store.close();
+    expect((await run(...done)).labels).toEqual({ state: 'done' });
+  }, 30_000);
+});
+
 describe('import', () => {
   it('fills the board from a state document and refreshes it on a rerun', async () => {
     const fixture = 'examples/board-state.json';

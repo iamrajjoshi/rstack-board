@@ -61,7 +61,9 @@ rstack-board checkin "Merged." --state done --unset needs --json
 Check in when you start, when you open a PR, when you need the person, and
 when you finish. It files the thread under `<coordinator>/workers`, or
 under `threads` when you are a one-off. To wait for the person's answer, pass
-the returned `id` to `rstack-board wait`.
+the returned `id` to `rstack-board wait`. A question asked with `--needs` stays open in
+"Needs you" until the person replies or clears it, even if you later check in
+`done` with `--unset needs`.
 
 ## Post status
 

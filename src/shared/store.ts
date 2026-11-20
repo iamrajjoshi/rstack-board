@@ -247,11 +247,13 @@ export class Store {
   /**
    * Posts a session's status to its own thread: the first call starts the thread, later calls
    * reply to it, and each call updates its labels. `key` identifies the session.
+   * An unanswered `needs` survives `unset`: it stays until `person` replies or changes a label.
    */
   checkin(input: {
     key: string;
     channel: string;
     author: string;
+    person: string;
     text: string;
     labels?: Labels | undefined;
     unset?: string[] | undefined;
@@ -266,7 +268,10 @@ export class Store {
       if (!created) {
         this.reply({ id: message.id, text: input.text, author: input.author });
       }
-      this.label({ id: message.id, actor: input.author, set: input.labels, unset: input.unset });
+      const unset = (input.unset ?? []).filter(
+        (key) => key !== NEEDS_LABEL || this.answered(message.id, input.person),
+      );
+      this.label({ id: message.id, actor: input.author, set: input.labels, unset });
       return this.getThread(message.id);
     });
   }
@@ -438,6 +443,18 @@ export class Store {
       .prepare('SELECT key, value FROM labels WHERE thread_id = ? ORDER BY key')
       .all(threadId);
     return Object.fromEntries(rows.map((row) => [str(row, 'key'), str(row, 'value')]));
+  }
+
+  /** Whether `person` has written on the thread since `needs` was last set on it. */
+  private answered(threadId: string, person: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 FROM events WHERE thread_id = ? AND actor = ? AND cursor > COALESCE(
+           (SELECT MAX(cursor) FROM events WHERE thread_id = ? AND type = 'labels.changed'
+              AND json_extract(data, '$.set.' || ?) IS NOT NULL), 0)`,
+      )
+      .get(threadId, person, threadId, NEEDS_LABEL);
+    return row !== undefined;
   }
 
   private insertMessage(input: {

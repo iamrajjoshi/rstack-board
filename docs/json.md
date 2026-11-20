@@ -24,6 +24,9 @@ argument, so put options, `--json` included, before it.
 `checkin` files its thread in `--channel <path>` when given, else in
 `<coordinator>/workers` for `--coordinator` or `$BOARD_COORDINATOR`, else in
 `threads`. Each channel (or coordinator) keeps its own thread per handle.
+`checkin --unset needs` leaves `needs` in place until the person (`status`'s
+`person`) has replied or changed a label on the thread since `needs` was set,
+so the returned `labels` can still hold `needs` after a `done` check-in.
 
 ## Exit codes and errors
 

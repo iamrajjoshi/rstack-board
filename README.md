@@ -151,7 +151,9 @@ lists every JSON shape, including `status --json`.
   lives in that channel; else, with `$BOARD_COORDINATOR` (or `--coordinator`)
   set, in `<coordinator>/workers`; else in `threads`, for one-off sessions.
   The first call starts the thread, later calls reply to it, and each call
-  updates its labels.
+  updates its labels. A `needs` it set stays until you reply or change a label on
+  the thread: the session's own later `--unset needs`, such as a `done`
+  check-in, does not bury an unanswered question.
 - `import` fills the board from one JSON document: items that need you, one
   entry per open pull request, merged pull requests and agent sessions. See
   [`examples/board-state.json`](examples/board-state.json) for the shape. Run

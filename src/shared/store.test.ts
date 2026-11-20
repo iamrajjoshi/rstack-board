@@ -197,6 +197,7 @@ describe('checkin', () => {
       key: 'shop:search',
       channel: 'shop/workers',
       author: 'search',
+      person: 'raj',
       text: 'Starting on accented queries.',
       labels: { state: 'working' },
     });
@@ -204,10 +205,17 @@ describe('checkin', () => {
       key: 'shop:search',
       channel: 'shop/workers',
       author: 'search',
+      person: 'raj',
       text: 'PR is up; which analyzer do you want?',
       labels: { state: 'blocked', pr: '102', needs: 'decision' },
     });
-    store.checkin({ key: ':search', channel: 'threads', author: 'search', text: 'A one-off.' });
+    store.checkin({
+      key: ':search',
+      channel: 'threads',
+      author: 'search',
+      person: 'raj',
+      text: 'A one-off.',
+    });
 
     expect(second.id).toBe(first.id);
     expect(second.title).toBe('search');
@@ -219,6 +227,41 @@ describe('checkin', () => {
       { channel: 'shop/workers', threads: 1, needs: 1, ready: 0, working: 0 },
       { channel: 'threads', threads: 1, needs: 0, ready: 0, working: 0 },
     ]);
+  });
+
+  it("keeps an unanswered question through the author's later check-ins, until the person writes", () => {
+    const store = memory();
+    const session = { key: ':search', channel: 'threads', author: 'search', person: 'raj' };
+    const asked = store.checkin({
+      ...session,
+      text: 'ICU or a custom fold?',
+      labels: { state: 'blocked', needs: 'decision' },
+    });
+    const done = store.checkin({
+      ...session,
+      text: 'Done.',
+      labels: { state: 'done' },
+      unset: ['needs'],
+    });
+    expect(done.labels).toEqual({ needs: 'decision', state: 'done' });
+    expect(store.listThreads({ labels: ['needs'] }).map((t) => t.id)).toEqual([asked.id]);
+
+    // Another agent's reply is not the person's answer.
+    store.reply({ id: asked.id, text: 'Use ICU.', author: 'coordinator' });
+    expect(store.checkin({ ...session, text: 'Done.', unset: ['needs'] }).labels.needs).toBe(
+      'decision',
+    );
+
+    store.reply({ id: asked.id, text: 'ICU.', author: 'raj' });
+    expect(
+      store.checkin({ ...session, text: 'Switched to ICU.', unset: ['needs'] }).labels,
+    ).toEqual({ state: 'done' });
+
+    // A new question is open again until the person answers it.
+    store.checkin({ ...session, text: 'Ship it?', labels: { needs: 'approval' } });
+    expect(store.checkin({ ...session, text: 'Done.', unset: ['needs'] }).labels.needs).toBe(
+      'approval',
+    );
   });
 });
 
