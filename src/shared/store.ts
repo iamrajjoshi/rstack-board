@@ -24,6 +24,9 @@ import {
   type ThreadSummary,
 } from './types';
 
+/** Version of the table layout below; bumped whenever it changes. Reported by `status --json`. */
+export const SCHEMA_VERSION = 1;
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS messages (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,

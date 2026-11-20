@@ -132,7 +132,8 @@ rstack-board import <state.json> [--project <name>]
 ```
 
 Every command takes `--json` and `--as <profile>`. Failures exit 1 and print
-`{"reason", "message"}` on stderr under `--json`.
+`{"reason", "message"}` on stderr under `--json`. [`docs/json.md`](docs/json.md)
+lists every JSON shape, including `status --json`.
 
 - `wait` returns the next message or label change by someone other than the
   caller. On a thread id it starts from that message, so an answer that

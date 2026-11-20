@@ -1,7 +1,11 @@
+import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { serve } from '@hono/node-server';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { createApp } from '../server/index';
 import { parseJson } from '../shared/json';
+import { Store } from '../shared/store';
 import { type RunResult, runScript, tempDir } from '../test/run';
 
 let stateDir: string;
@@ -114,6 +118,83 @@ describe('inside an rstack code thread', () => {
     expect((await run({ BOARD_PROFILE: 'checkout' }, 'whoami')).handle).toBe('checkout');
     const posted = await run({}, 'post', 'dev', 'hello', '--as', 'search');
     expect((await run({}, 'read', posted.id)).labels).toEqual({});
+  }, 30_000);
+});
+
+describe('machine-readable output', () => {
+  it('reports version, schema, handles and no server in status --json', async () => {
+    const status = await json('bridge', 'status');
+    expect(status).toMatchObject({
+      running: false,
+      url: null,
+      pid: null,
+      server: null,
+      stateDir,
+      database: path.join(stateDir, 'board.db'),
+      schemaVersion: 1,
+      handle: 'bridge',
+    });
+    expect(status.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(typeof status.person).toBe('string');
+  });
+
+  it('reports the running server from server.json in status --json', async () => {
+    const previous = process.env.RSTACK_BOARD_STATE_DIR;
+    process.env.RSTACK_BOARD_STATE_DIR = stateDir;
+    const app = createApp({ store: new Store(':memory:'), person: 'raj', webRoot: '/nonexistent' });
+    const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
+    try {
+      await new Promise((resolve) => server.once('listening', resolve));
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      const info = { pid: process.pid, port, version: '0.1.0', stateDir, startedAt: 'now' };
+      writeFileSync(path.join(stateDir, 'server.json'), JSON.stringify(info));
+
+      const status = await json('bridge', 'status');
+      expect(status).toMatchObject({ running: true, pid: process.pid });
+      expect(status.url).toBe(`http://localhost:${port}`);
+      expect(status.server).toEqual({ ...info, url: `http://localhost:${port}` });
+    } finally {
+      server.close();
+      process.env.RSTACK_BOARD_STATE_DIR = previous;
+    }
+  });
+
+  it('reports usage errors as reason usage under --json', async () => {
+    const result = await cli('a', 'post');
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stderr)).toMatchObject({ reason: 'usage' });
+  });
+
+  it('streams one JSON event per line from tail --json', async () => {
+    const root = await json('a', 'post', 'dev', 'first');
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', 'src/cli/index.ts', 'tail', root.id, '--json'],
+      {
+        env: { ...process.env, RSTACK_BOARD_STATE_DIR: stateDir, BOARD_PROFILE: 'watcher' },
+      },
+    );
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await json('b', 'reply', root.id, 'second');
+      await json('b', 'label', root.id, 'state=done');
+      await expect.poll(() => output.split('\n').filter(Boolean).length, { timeout: 5000 }).toBe(2);
+      const events = output
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      expect(events.map((event) => [event.type, event.actor, event.threadId])).toEqual([
+        ['message.posted', 'b', root.id],
+        ['labels.changed', 'b', root.id],
+      ]);
+    } finally {
+      child.kill();
+    }
   }, 30_000);
 });
 

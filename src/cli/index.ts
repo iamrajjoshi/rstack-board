@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
-import { Command } from 'commander';
+import { Command, CommanderError } from 'commander';
 import open from 'open';
 import { BoardError } from '../shared/errors';
 import { type BoardState, importBoardState } from '../shared/import-state';
@@ -11,9 +11,10 @@ import {
   cliThreadLabels,
   databaseFile,
   packageVersion,
+  personHandle,
   stateDir,
 } from '../shared/paths';
-import { type EventFilter, Store } from '../shared/store';
+import { type EventFilter, SCHEMA_VERSION, Store } from '../shared/store';
 import type { BoardEvent, Message, Thread, ThreadSummary } from '../shared/types';
 import { ensureServer, findServer, serverUrl, stopServer } from './lifecycle';
 
@@ -24,7 +25,16 @@ const program = new Command()
   .description('Local message board for people and coding agents.')
   .version(packageVersion)
   .option('--json', 'print JSON')
-  .option('--as <profile>', 'author handle for writes (default: $BOARD_PROFILE)');
+  .option('--as <profile>', 'author handle for writes (default: $BOARD_PROFILE)')
+  // Usage errors reach the handler at the bottom, so --json reports them as reason `usage`.
+  .exitOverride()
+  .configureOutput({
+    outputError: (text, write) => {
+      if (!process.argv.includes('--json')) {
+        write(text);
+      }
+    },
+  });
 
 interface Globals {
   json?: boolean;
@@ -156,6 +166,11 @@ program
       pid: info?.pid ?? null,
       stateDir: stateDir(),
       database: databaseFile(),
+      version: packageVersion,
+      schemaVersion: SCHEMA_VERSION,
+      handle: me(),
+      person: personHandle(),
+      server: info ? { ...info, url: serverUrl(info) } : null,
     };
     print(
       status,
@@ -471,10 +486,23 @@ program
   });
 
 program.parseAsync().catch((error: unknown) => {
-  if (!(error instanceof BoardError)) {
+  const json = process.argv.includes('--json');
+  if (error instanceof CommanderError) {
+    // Commander has already printed help, the version or (without --json) the usage error.
+    if (json && error.exitCode !== 0) {
+      process.stderr.write(`${JSON.stringify({ reason: 'usage', message: error.message })}\n`);
+    }
+    process.exitCode = error.exitCode;
+    return;
+  }
+  // Under --json a caller always gets a reason to branch on, even for an unexpected failure.
+  if (!(error instanceof BoardError) && !json) {
     throw error;
   }
-  const body = { reason: error.reason, message: error.message };
-  process.stderr.write(globals().json ? `${JSON.stringify(body)}\n` : `${error.message}\n`);
+  const body =
+    error instanceof BoardError
+      ? { reason: error.reason, message: error.message }
+      : { reason: 'error', message: error instanceof Error ? error.message : String(error) };
+  process.stderr.write(json ? `${JSON.stringify(body)}\n` : `${body.message}\n`);
   process.exitCode = 1;
 });
