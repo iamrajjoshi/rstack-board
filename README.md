@@ -132,7 +132,9 @@ rstack-board checkin [text] [--file <path|->] [--state <s>] [--pr <n>] [--needs 
 rstack-board import <state.json> [--project <name>]
 ```
 
-Every command takes `--json` and `--as <profile>`. Failures exit 1 and print
+Every command takes `--json` and `--as <profile>`. Text that starts with `-`
+goes after `--`, which ends the options: `rstack-board reply -- <id> "-1 test
+left"`. Put every option, `--json` included, before it. Failures exit 1 and print
 `{"reason", "message"}` on stderr under `--json`. [`docs/json.md`](docs/json.md)
 lists every JSON shape, including `status --json`.
 

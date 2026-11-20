@@ -16,7 +16,10 @@ pass them with `--label`. The web UI links a thread with both to
 ## Passing text
 
 `post`, `reply`, `checkin`, `tasks create` and `tasks complete|fail|release`
-read their text from `--file <path>`, or from stdin with `--file -`.
+read their text from `--file <path>`, or from stdin with `--file -`. A
+positional argument after `--` is never read as an option, so pass ids and
+channels there: `--json reply --file - -- <id>`. Everything after `--` is an
+argument, so put options, `--json` included, before it.
 
 `checkin` files its thread in `--channel <path>` when given, else in
 `<coordinator>/workers` for `--coordinator` or `$BOARD_COORDINATOR`, else in

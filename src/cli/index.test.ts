@@ -28,6 +28,18 @@ async function json<T = any>(profile: string, ...args: string[]): Promise<T> {
   return parseJson<T>(result.stdout);
 }
 
+/** Like `json`, with `--json` first, as the bridge passes it, so `--` can end the options. */
+async function jsonFirst<T = any>(profile: string, ...args: string[]): Promise<T> {
+  const result = await runScript('src/cli/index.ts', ['--json', ...args], {
+    RSTACK_BOARD_STATE_DIR: stateDir,
+    BOARD_PROFILE: profile,
+    BOARD_COORDINATOR: '',
+    T3CODE_THREAD_ID: '',
+  });
+  expect(result.stderr).toBe('');
+  return parseJson<T>(result.stdout);
+}
+
 describe('posting and reading', () => {
   it('posts, replies, labels and reads back a thread', async () => {
     const root = await json('ui', 'post', 'prs/ui', '**#7 Cart badge**', '--label', 'state=review');
@@ -60,6 +72,22 @@ describe('posting and reading', () => {
     expect((await json('a', 'read', 'dev')).threads).toHaveLength(1);
     expect((await json('a', 'read', first.id)).title).toBe('Plan');
   });
+
+  it('takes text that starts with a dash after --, in every command that takes text', async () => {
+    const rejected = await cli('a', 'post', 'dev', '-x is not an option');
+    expect(JSON.parse(rejected.stderr).reason).toBe('usage');
+
+    const root = await jsonFirst('a', 'post', '--label', 'state=review', '--', 'dev', '-x title');
+    expect(root.text).toBe('-x title');
+    expect((await jsonFirst('b', 'reply', '--', root.id, '--force')).text).toBe('--force');
+    const checkin = await jsonFirst('a', 'checkin', '--state', 'working', '--', '-v');
+    expect(checkin.message.text).toBe('**a**\n\n-v');
+    const task = await jsonFirst('a', 'tasks', 'create', '--', 'tasks', '--help me');
+    expect(task.text).toBe('--help me');
+    await jsonFirst('b', 'tasks', 'claim', '--', task.id);
+    const done = await jsonFirst('b', 'tasks', 'complete', '--', task.id, '-1 flaky test left');
+    expect(done.last.text).toBe('-1 flaky test left');
+  }, 30_000);
 
   it('reports failures as a reason on stderr with exit code 1', async () => {
     const result = await cli('a', 'reply', 'msg_missing', 'hello');
