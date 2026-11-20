@@ -226,6 +226,27 @@ describe('write origin', () => {
   });
 });
 
+describe('reading events in batches', () => {
+  it('resumes after the last event looked at, so each event is read exactly once', () => {
+    const store = memory();
+    const { message } = store.post({ channel: 'dev', text: 'root', author: 'a' });
+    store.reply({ id: message.id, text: 'one', author: 'b' });
+    store.post({ channel: 'other', text: 'not watched', author: 'b' });
+    const filter = { channel: 'dev' };
+
+    const replay = store.scanEvents(store.cursorOf(message.id), filter);
+    expect(replay.events.map((event) => event.actor)).toEqual(['b']);
+    // The non-matching event was looked at too, so it is not scanned again.
+    expect(replay.cursor).toBe(store.lastCursor());
+
+    // Written after the replay and before the next read: delivered once, by the next read.
+    store.reply({ id: message.id, text: 'two', author: 'c' });
+    const next = store.scanEvents(replay.cursor, filter);
+    expect(next.events.map((event) => event.actor)).toEqual(['c']);
+    expect(store.scanEvents(next.cursor, filter)).toEqual({ events: [], cursor: next.cursor });
+  });
+});
+
 describe('tasks', () => {
   it('claims the oldest ready thread and lets only the owner settle it', () => {
     const store = memory();

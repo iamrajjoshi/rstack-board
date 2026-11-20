@@ -122,6 +122,18 @@ function addFilters(command: Command): Command {
     );
 }
 
+/** The event cursor for `--after`: an event cursor, or a message id for the event that posted it. */
+function resumeCursor(store: Store, after: string): number {
+  if (isMessageId(after)) {
+    return store.cursorOf(after);
+  }
+  const cursor = Number(after);
+  if (!Number.isInteger(cursor) || cursor < 0) {
+    throw new BoardError('usage', '--after takes a message id or an event cursor.');
+  }
+  return cursor;
+}
+
 /** Turns a `[channel|id]` argument and filter flags into an event filter. */
 function eventFilter(
   store: Store,
@@ -307,16 +319,19 @@ program
 addFilters(
   program
     .command('tail [target]')
-    .description('print new messages and label changes until interrupted'),
-).action(async (target: string | undefined, options: FilterOptions) => {
+    .description('print new messages and label changes until interrupted')
+    .option('--after <cursor>', 'first replay events after this event cursor or message id'),
+).action(async (target: string | undefined, options: FilterOptions & { after?: string }) => {
   const store = openStore();
   const filter = eventFilter(store, target, options);
-  let cursor = store.lastCursor();
+  // One loop serves the replay and the live stream, so nothing between them is lost or repeated.
+  let cursor = options.after ? resumeCursor(store, options.after) : store.lastCursor();
   for (;;) {
-    for (const event of store.eventsAfter(cursor, filter)) {
+    const batch = store.scanEvents(cursor, filter);
+    for (const event of batch.events) {
       process.stdout.write(globals().json ? `${JSON.stringify(event)}\n` : formatEvent(event));
     }
-    cursor = store.lastCursor();
+    cursor = batch.cursor;
     await sleep(POLL_MS);
   }
 });
@@ -340,9 +355,7 @@ addFilters(
     // A thread is watched from the named message, so an answer that already arrived returns at
     // once; a channel is watched from now.
     let cursor = options.after
-      ? isMessageId(options.after)
-        ? store.cursorOf(options.after)
-        : Number(options.after)
+      ? resumeCursor(store, options.after)
       : isMessageId(target)
         ? store.cursorOf(target)
         : store.lastCursor();

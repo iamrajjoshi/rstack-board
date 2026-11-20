@@ -226,7 +226,44 @@ describe('machine-readable output', () => {
   }, 30_000);
 });
 
-describe('write origin', () => {
+describe('resuming and write origin', () => {
+  it('replays events after --after, then streams live ones, each exactly once', async () => {
+    const root = await json('a', 'post', 'dev', 'first');
+    const missed = await json('raj', 'reply', root.id, 'written while the consumer was down');
+    const output: string[] = [];
+    let buffer = '';
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', 'src/cli/index.ts', 'tail', 'dev', '--after', root.id, '--json'],
+      { env: { ...process.env, RSTACK_BOARD_STATE_DIR: stateDir, BOARD_PROFILE: 'bridge' } },
+    );
+    child.stdout.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      output.push(...lines.filter(Boolean));
+    });
+    try {
+      // Written while tail starts up and replays, then once it is live.
+      await json('b', 'label', root.id, 'state=review');
+      await expect.poll(() => output.length, { timeout: 10_000 }).toBe(2);
+      await json('b', 'reply', root.id, 'live');
+      await expect.poll(() => output.length, { timeout: 10_000 }).toBe(3);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      const events = output.map((line) => JSON.parse(line));
+      expect(events.map((event) => [event.type, event.actor])).toEqual([
+        ['message.posted', 'raj'],
+        ['labels.changed', 'b'],
+        ['message.posted', 'b'],
+      ]);
+      expect(events[0].message.id).toBe(missed.id);
+      expect(events.map((event) => event.cursor)).toEqual([2, 3, 4]);
+    } finally {
+      child.kill();
+    }
+  }, 30_000);
+
   it('filters read and wait by --via, and marks CLI writes as cli', async () => {
     const root = await json('agent', 'post', 'needs-you', 'Merge?');
     // Posing as the person from a shell is still a CLI write.
@@ -240,9 +277,14 @@ describe('write origin', () => {
     const event = await json('agent', 'wait', root.id, '--via', 'cli', '--timeout', '5s');
     expect(event).toMatchObject({ actor: 'raj', via: 'cli', message: { via: 'cli' } });
 
-    const result = await cli('x', 'read', '--via', 'browser');
-    expect(result.code).toBe(1);
-    expect(JSON.parse(result.stderr).reason).toBe('usage');
+    for (const args of [
+      ['read', '--via', 'browser'],
+      ['tail', '--after', 'soon'],
+    ]) {
+      const result = await cli('x', ...args);
+      expect(result.code).toBe(1);
+      expect(JSON.parse(result.stderr).reason).toBe('usage');
+    }
   }, 30_000);
 });
 

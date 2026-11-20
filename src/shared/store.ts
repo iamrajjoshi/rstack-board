@@ -431,15 +431,26 @@ export class Store {
 
   /** Events after `cursor` that match the filter, oldest first. */
   eventsAfter(cursor: number, filter: EventFilter = {}): BoardEvent[] {
+    return this.scanEvents(cursor, filter).events;
+  }
+
+  /**
+   * The next batch of events after `cursor` that match the filter, oldest first, and the cursor to
+   * read the following batch after: the last event looked at, matched or not. Writes commit in
+   * cursor order, so reading batch after batch this way sees every event exactly once.
+   */
+  scanEvents(cursor: number, filter: EventFilter = {}): { events: BoardEvent[]; cursor: number } {
     const labelFilters = (filter.labels ?? []).map(parseLabelFilter);
     const rows = this.db
       .prepare('SELECT * FROM events WHERE cursor > ? ORDER BY cursor LIMIT 500')
       .all(cursor);
-    return rows
+    const events = rows
       .map((row) => this.toEvent(row))
       .filter((event) =>
         matchesEvent(event, filter, labelFilters, () => this.getLabels(event.threadId)),
       );
+    const last = rows.at(-1);
+    return { events, cursor: last ? int(last, 'cursor') : cursor };
   }
 
   private toEvent(row: Row): BoardEvent {
