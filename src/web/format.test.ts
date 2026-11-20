@@ -21,6 +21,7 @@ function thread(state?: string): ThreadSummary {
     author: 'coordinator',
     text: 'a task',
     createdAt: '2026-11-20T12:00:00Z',
+    via: 'cli',
   };
   return {
     id: message.id,

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
-import { Command, CommanderError } from 'commander';
+import { Command, CommanderError, Option } from 'commander';
 import open from 'open';
 import { BoardError } from '../shared/errors';
 import { type BoardState, importBoardState } from '../shared/import-state';
@@ -15,7 +15,7 @@ import {
   stateDir,
 } from '../shared/paths';
 import { type EventFilter, SCHEMA_VERSION, Store } from '../shared/store';
-import type { BoardEvent, Message, Thread, ThreadSummary } from '../shared/types';
+import type { BoardEvent, Message, Thread, ThreadSummary, Via } from '../shared/types';
 import { ensureServer, findServer, serverUrl, stopServer } from './lifecycle';
 
 const POLL_MS = 200;
@@ -107,13 +107,19 @@ interface FilterOptions {
   label: string[];
   text?: string;
   by?: string;
+  via?: Via;
 }
 
 function addFilters(command: Command): Command {
   return command
     .option('--label <filter>', 'label filter: key, key=value or key=a|b', collect, [])
     .option('--text <words>', 'only messages containing this text')
-    .option('--by <handle>', 'only this author');
+    .option('--by <handle>', 'only this author')
+    .addOption(
+      new Option('--via <origin>', "only writes made on the board's page (web) or the CLI").choices(
+        ['web', 'cli'],
+      ),
+    );
 }
 
 /** Turns a `[channel|id]` argument and filter flags into an event filter. */
@@ -127,6 +133,7 @@ function eventFilter(
     labels: options.label,
     text: options.text,
     by: options.by,
+    via: options.via,
   };
 }
 
@@ -227,6 +234,7 @@ addFilters(
     labels: options.label,
     text: options.text,
     by: options.by,
+    via: options.via,
     limit: options.n,
   });
   print({ threads, cursor: store.lastCursor() }, threads.map(formatSummary).join('\n'));

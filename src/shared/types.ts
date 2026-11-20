@@ -1,5 +1,8 @@
 export type Labels = Record<string, string>;
 
+/** How a write reached the board: `web` through the server from the board's page, `cli` otherwise. */
+export type Via = 'web' | 'cli';
+
 export interface Message {
   id: string;
   threadId: string;
@@ -7,6 +10,7 @@ export interface Message {
   author: string;
   text: string;
   createdAt: string;
+  via: Via;
 }
 
 /** A thread as listed: its root message, labels, and the latest message. */
@@ -39,11 +43,13 @@ export interface ChannelSummary {
 }
 
 export type BoardEvent = {
+  /** Increases with every event; pass it to `tail --after` or `wait --after` to resume. */
   cursor: number;
   threadId: string;
   channel: string;
   actor: string;
   at: string;
+  via: Via;
 } & (
   | { type: 'message.posted'; message: Message }
   | { type: 'labels.changed'; set: Labels; unset: string[]; labels: Labels }

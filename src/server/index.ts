@@ -27,7 +27,7 @@ export interface AppOptions {
 export function createApp({ store, person, webRoot = defaultWebRoot() }: AppOptions): Hono {
   const app = new Hono();
   // The server has no auth, so only pages it served may reach it: the Host check stops DNS
-  // rebinding, and the Origin check stops other sites from posting to localhost. Any port is
+  // rebinding, and the Origin check stops other sites from reaching localhost. Any port is
   // accepted because an SSH tunnel may forward the board to a different local port.
   app.use(async (c, next) => {
     const origin = c.req.header('origin');
@@ -36,6 +36,16 @@ export function createApp({ store, person, webRoot = defaultWebRoot() }: AppOpti
       (origin && !isLoopback(origin.replace(/^http:\/\//, '')))
     ) {
       return c.json({ reason: 'forbidden', message: 'Requests must come from this board.' }, 403);
+    }
+    // Writes are recorded as the person's, made on the page, so they must carry the page's own
+    // origin: the scheme and Host the browser loaded it from, which for a tunnel or forwarded
+    // port is that port. This keeps a bare curl or another local page from writing as `web`;
+    // it is not authentication.
+    if (c.req.method !== 'GET' && origin !== `http://${c.req.header('host')}`) {
+      return c.json(
+        { reason: 'forbidden', message: "Writes must come from the board's own page." },
+        403,
+      );
     }
     return next();
   });
@@ -77,19 +87,26 @@ export function createApp({ store, person, webRoot = defaultWebRoot() }: AppOpti
       text: body.text,
       author: person,
       labels: body.labels,
+      via: 'web',
     });
     return c.json(store.getThread(message.id));
   });
 
   app.post('/api/threads/:id/replies', async (c) => {
     const body = await c.req.json<{ text: string }>();
-    store.reply({ id: c.req.param('id'), text: body.text, author: person });
+    store.reply({ id: c.req.param('id'), text: body.text, author: person, via: 'web' });
     return c.json(store.getThread(c.req.param('id')));
   });
 
   app.post('/api/threads/:id/labels', async (c) => {
     const body = await c.req.json<{ set?: Record<string, string>; unset?: string[] }>();
-    store.label({ id: c.req.param('id'), actor: person, set: body.set, unset: body.unset });
+    store.label({
+      id: c.req.param('id'),
+      actor: person,
+      via: 'web',
+      set: body.set,
+      unset: body.unset,
+    });
     return c.json(store.getThread(c.req.param('id')));
   });
 

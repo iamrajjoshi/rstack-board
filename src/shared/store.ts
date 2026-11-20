@@ -22,10 +22,11 @@ import {
   STATE_LABEL,
   type Thread,
   type ThreadSummary,
+  type Via,
 } from './types';
 
 /** Version of the table layout below; bumped whenever it changes. Reported by `status --json`. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS messages (
@@ -36,7 +37,8 @@ CREATE TABLE IF NOT EXISTS messages (
   author TEXT NOT NULL,
   text TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  idempotency_key TEXT UNIQUE
+  idempotency_key TEXT UNIQUE,
+  via TEXT NOT NULL DEFAULT 'cli'
 );
 CREATE INDEX IF NOT EXISTS messages_thread ON messages(thread_id, seq);
 CREATE TABLE IF NOT EXISTS labels (
@@ -53,10 +55,18 @@ CREATE TABLE IF NOT EXISTS events (
   actor TEXT NOT NULL,
   at TEXT NOT NULL,
   message_id TEXT,
-  data TEXT
+  data TEXT,
+  via TEXT NOT NULL DEFAULT 'cli'
 );
 CREATE INDEX IF NOT EXISTS events_thread ON events(thread_id, cursor);
 `;
+
+/** Columns added since schema 1, made on databases that predate them. */
+const ADDED_COLUMNS = [
+  // Schema 2. Earlier writes cannot be told apart, so they count as CLI writes.
+  { table: 'messages', column: 'via', definition: "TEXT NOT NULL DEFAULT 'cli'" },
+  { table: 'events', column: 'via', definition: "TEXT NOT NULL DEFAULT 'cli'" },
+];
 
 const MAX_TEXT_LENGTH = 10_000;
 const MAX_LABEL_VALUE_LENGTH = 200;
@@ -71,6 +81,8 @@ export interface ThreadFilter {
   text?: string | undefined;
   /** Only threads with a message by this author. */
   by?: string | undefined;
+  /** Only threads with a message written this way (by `by`, when both are given). */
+  via?: Via | undefined;
   limit?: number | undefined;
 }
 
@@ -81,6 +93,7 @@ export interface EventFilter extends Omit<ThreadFilter, 'limit'> {
 export interface LabelChange {
   id: string;
   actor: string;
+  via?: Via | undefined;
   set?: Labels | undefined;
   unset?: string[] | undefined;
   /** Apply only when these labels currently have these values. */
@@ -103,7 +116,20 @@ export class Store {
     this.db = new DatabaseSync(file, { timeout: 10_000 });
     this.enableWal();
     this.db.exec('PRAGMA synchronous = NORMAL;');
-    this.transaction(() => this.db.exec(SCHEMA));
+    this.transaction(() => {
+      this.db.exec(SCHEMA);
+      this.addMissingColumns();
+    });
+  }
+
+  /** Brings a database made by an older version up to this layout; older CLIs can still use it. */
+  private addMissingColumns(): void {
+    for (const { table, column, definition } of ADDED_COLUMNS) {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all();
+      if (!columns.some((row) => row.name === column)) {
+        this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      }
+    }
   }
 
   /**
@@ -137,6 +163,7 @@ export class Store {
     author: string;
     labels?: Labels | undefined;
     idempotencyKey?: string | undefined;
+    via?: Via | undefined;
   }): { message: Message; created: boolean } {
     assertChannel(input.channel);
     const labels = normalizeLabels(input.labels ?? {});
@@ -156,7 +183,13 @@ export class Store {
   }
 
   /** Replies to the thread that message `id` belongs to. */
-  reply(input: { id: string; text: string; author: string; idempotencyKey?: string | undefined }): {
+  reply(input: {
+    id: string;
+    text: string;
+    author: string;
+    idempotencyKey?: string | undefined;
+    via?: Via | undefined;
+  }): {
     message: Message;
     created: boolean;
   } {
@@ -182,7 +215,14 @@ export class Store {
           throw new BoardError('precondition_failed', `Label ${key} is already set.`);
         }
       }
-      return this.applyLabels(root.threadId, root.channel, change.actor, set, change.unset ?? []);
+      return this.applyLabels(
+        root.threadId,
+        root.channel,
+        change.actor,
+        set,
+        change.unset ?? [],
+        change.via,
+      );
     });
   }
 
@@ -324,9 +364,11 @@ export class Store {
       );
       params.push(`%${escapeLike(filter.text)}%`);
     }
-    if (filter.by) {
-      where.push('EXISTS (SELECT 1 FROM messages a WHERE a.thread_id = m.id AND a.author = ?)');
-      params.push(filter.by);
+    if (filter.by || filter.via) {
+      const author = filter.by ? 'AND a.author = ?' : '';
+      const via = filter.via ? 'AND a.via = ?' : '';
+      where.push(`EXISTS (SELECT 1 FROM messages a WHERE a.thread_id = m.id ${author} ${via})`);
+      params.push(...[filter.by, filter.via].filter((value) => value !== undefined));
     }
     const rows = this.db
       .prepare(
@@ -407,6 +449,7 @@ export class Store {
       channel: str(row, 'channel'),
       actor: str(row, 'actor'),
       at: str(row, 'at'),
+      via: toVia(row),
     };
     if (row.type === 'message.posted') {
       const message = this.row('SELECT * FROM messages WHERE id = ?', str(row, 'message_id'));
@@ -484,6 +527,7 @@ export class Store {
     text: string;
     author: string;
     idempotencyKey?: string | undefined;
+    via?: Via | undefined;
   }): { message: Message; created: boolean } {
     if (input.idempotencyKey) {
       const existing = this.db
@@ -511,11 +555,12 @@ export class Store {
       author: input.author,
       text,
       createdAt: new Date().toISOString(),
+      via: input.via ?? 'cli',
     };
     this.db
       .prepare(
-        `INSERT INTO messages (id, thread_id, channel, author, text, created_at, idempotency_key)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO messages (id, thread_id, channel, author, text, created_at, idempotency_key, via)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         message.id,
@@ -525,9 +570,11 @@ export class Store {
         message.text,
         message.createdAt,
         input.idempotencyKey ?? null,
+        message.via,
       );
     this.insertEvent('message.posted', message.threadId, message.channel, message.author, {
       messageId: message.id,
+      via: message.via,
     });
     return { message, created: true };
   }
@@ -539,6 +586,7 @@ export class Store {
     actor: string,
     set: Labels,
     unset: string[],
+    via: Via = 'cli',
   ): Labels {
     const current = this.getLabels(threadId);
     const changedSet: Labels = {};
@@ -558,6 +606,7 @@ export class Store {
       this.insertEvent('labels.changed', threadId, channel, actor, {
         set: changedSet,
         unset: changedUnset,
+        via,
       });
     }
     return this.getLabels(threadId);
@@ -572,12 +621,14 @@ export class Store {
       messageId?: string | undefined;
       set?: Labels | undefined;
       unset?: string[] | undefined;
+      via: Via;
     },
   ): void {
+    const { via, ...rest } = data;
     this.db
       .prepare(
-        `INSERT INTO events (type, thread_id, channel, actor, at, message_id, data)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO events (type, thread_id, channel, actor, at, message_id, data, via)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         type,
@@ -586,7 +637,8 @@ export class Store {
         actor,
         new Date().toISOString(),
         data.messageId ?? null,
-        JSON.stringify(data),
+        JSON.stringify(rest),
+        via,
       );
   }
 
@@ -625,6 +677,9 @@ function matchesEvent(
     }
   }
   if (filter.by && event.actor !== filter.by) {
+    return false;
+  }
+  if (filter.via && event.via !== filter.via) {
     return false;
   }
   if (filter.text) {
@@ -677,7 +732,12 @@ function toMessage(row: Row): Message {
     author: str(row, 'author'),
     text: str(row, 'text'),
     createdAt: str(row, 'created_at'),
+    via: toVia(row),
   };
+}
+
+function toVia(row: Row): Via {
+  return str(row, 'via') === 'web' ? 'web' : 'cli';
 }
 
 /** A thread's title: the first line of its root message without Markdown markers. */

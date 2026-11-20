@@ -165,6 +165,67 @@ describe('events', () => {
   });
 });
 
+describe('write origin', () => {
+  it('records how each message and label change was written, and filters on it', () => {
+    const store = memory();
+    const { message } = store.post({ channel: 'ask', text: 'ship it?', author: 'agent' });
+    const start = store.cursorOf(message.id);
+    // An agent can write under the person's handle, but not as the web page.
+    store.reply({ id: message.id, text: 'yes (forged)', author: 'raj' });
+    store.reply({ id: message.id, text: 'yes', author: 'raj', via: 'web' });
+    store.label({ id: message.id, actor: 'raj', via: 'web', set: { decision: 'approved' } });
+    store.post({ channel: 'ask', text: 'other', author: 'raj' });
+
+    expect(store.getThread(message.id).replies.map((reply) => reply.via)).toEqual(['cli', 'web']);
+    const events = store.eventsAfter(start);
+    expect(events.map((event) => [event.type, event.via])).toEqual([
+      ['message.posted', 'cli'],
+      ['message.posted', 'web'],
+      ['labels.changed', 'web'],
+      ['message.posted', 'cli'],
+    ]);
+    expect(store.eventsAfter(start, { by: 'raj', via: 'web' })).toHaveLength(2);
+    expect(store.listThreads({ via: 'web' }).map((thread) => thread.id)).toEqual([message.id]);
+    expect(store.listThreads({ by: 'agent', via: 'web' })).toEqual([]);
+    expect(store.listThreads({ by: 'raj', via: 'cli' })).toHaveLength(2);
+  });
+
+  it('opens a schema 1 database, counting its earlier writes as CLI writes', () => {
+    const file = path.join(tempDir(), 'board.db');
+    const { DatabaseSync } = process.getBuiltinModule('node:sqlite');
+    const old = new DatabaseSync(file);
+    old.exec(`
+      CREATE TABLE messages (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
+        thread_id TEXT NOT NULL, channel TEXT NOT NULL, author TEXT NOT NULL, text TEXT NOT NULL,
+        created_at TEXT NOT NULL, idempotency_key TEXT UNIQUE);
+      CREATE TABLE labels (thread_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
+        PRIMARY KEY (thread_id, key)) WITHOUT ROWID;
+      CREATE TABLE events (cursor INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL,
+        thread_id TEXT NOT NULL, channel TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL,
+        message_id TEXT, data TEXT);
+      INSERT INTO messages (id, thread_id, channel, author, text, created_at)
+        VALUES ('msg_old', 'msg_old', 'dev', 'raj', 'from before', '2026-11-01T00:00:00Z');
+      INSERT INTO events (type, thread_id, channel, actor, at, message_id, data)
+        VALUES ('message.posted', 'msg_old', 'dev', 'raj', '2026-11-01T00:00:00Z', 'msg_old',
+          '{"messageId":"msg_old"}');
+    `);
+    old.close();
+
+    const store = new Store(file);
+    expect(store.getThread('msg_old').message).toMatchObject({ text: 'from before', via: 'cli' });
+    expect(store.eventsAfter(0).map((event) => [event.cursor, event.via])).toEqual([[1, 'cli']]);
+    store.reply({ id: 'msg_old', text: 'after', author: 'raj', via: 'web' });
+    store.close();
+
+    // Opening it again changes nothing, and the new write kept its origin.
+    const reopened = new Store(file);
+    expect(reopened.eventsAfter(0).map((event) => [event.cursor, event.via])).toEqual([
+      [1, 'cli'],
+      [2, 'web'],
+    ]);
+  });
+});
+
 describe('tasks', () => {
   it('claims the oldest ready thread and lets only the owner settle it', () => {
     const store = memory();

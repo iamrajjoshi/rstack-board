@@ -159,7 +159,7 @@ describe('machine-readable output', () => {
       server: null,
       stateDir,
       database: path.join(stateDir, 'board.db'),
-      schemaVersion: 1,
+      schemaVersion: 2,
       handle: 'bridge',
     });
     expect(status.version).toMatch(/^\d+\.\d+\.\d+/);
@@ -223,6 +223,26 @@ describe('machine-readable output', () => {
     } finally {
       child.kill();
     }
+  }, 30_000);
+});
+
+describe('write origin', () => {
+  it('filters read and wait by --via, and marks CLI writes as cli', async () => {
+    const root = await json('agent', 'post', 'needs-you', 'Merge?');
+    // Posing as the person from a shell is still a CLI write.
+    const forged = await json('raj', 'reply', root.id, 'yes');
+    expect(forged.via).toBe('cli');
+
+    expect((await json('x', 'read', '--via', 'cli')).threads).toHaveLength(1);
+    expect((await json('x', 'read', '--via', 'web')).threads).toEqual([]);
+    const waited = await cli('agent', 'wait', root.id, '--via', 'web', '--timeout', '1s');
+    expect(JSON.parse(waited.stderr).reason).toBe('timeout');
+    const event = await json('agent', 'wait', root.id, '--via', 'cli', '--timeout', '5s');
+    expect(event).toMatchObject({ actor: 'raj', via: 'cli', message: { via: 'cli' } });
+
+    const result = await cli('x', 'read', '--via', 'browser');
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stderr).reason).toBe('usage');
   }, 30_000);
 });
 

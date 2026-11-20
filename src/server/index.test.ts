@@ -8,6 +8,8 @@ import type { BoardEvent, Thread, ThreadSummary } from '../shared/types';
 import { createApp } from './index';
 
 const HOST = { host: 'localhost:4477' };
+/** What the board's own page sends with a write. */
+const PAGE = { ...HOST, origin: 'http://localhost:4477' };
 
 async function readJson<T>(response: Response): Promise<T> {
   return parseJson<T>(await response.text());
@@ -34,7 +36,7 @@ function setup() {
   const post = (path: string, body: unknown, headers = {}) =>
     app.request(path, {
       method: 'POST',
-      headers: { ...HOST, 'content-type': 'application/json', ...headers },
+      headers: { ...PAGE, 'content-type': 'application/json', ...headers },
       body: JSON.stringify(body),
     });
   return { store, app, get, post };
@@ -92,10 +94,16 @@ describe('writes from the browser', () => {
     });
     const thread = await readJson<Thread>(response);
 
-    expect(thread.replies.map((reply) => [reply.author, reply.text])).toEqual([['raj', 'yes']]);
+    expect(thread.replies.map((reply) => [reply.author, reply.text, reply.via])).toEqual([
+      ['raj', 'yes', 'web'],
+    ]);
+    expect(thread.message.via).toBe('cli');
     expect(thread.labels).toEqual({ decision: 'approved' });
     // These are the events an agent's `wait` on the thread wakes on.
-    expect(store.eventsAfter(start).map((event) => event.actor)).toEqual(['raj', 'raj']);
+    expect(store.eventsAfter(start).map((event) => [event.actor, event.via])).toEqual([
+      ['raj', 'web'],
+      ['raj', 'web'],
+    ]);
   });
 
   it('starts a thread as the person, with its labels', async () => {
@@ -108,7 +116,7 @@ describe('writes from the browser', () => {
     const thread = await readJson<Thread>(response);
 
     expect(thread).toMatchObject({ channel: 'tasks', title: 'Rebase #103' });
-    expect(thread.message.author).toBe('raj');
+    expect(thread.message).toMatchObject({ author: 'raj', via: 'web' });
     expect(store.claim({ channel: 'tasks', actor: 'agent' }).id).toBe(thread.id);
   });
 
@@ -147,6 +155,42 @@ describe('local-only access', () => {
   });
 });
 
+describe('writes recorded as the web page', () => {
+  it('need the origin of the page they are sent to', async () => {
+    const { store, app, post } = setup();
+    const { message } = store.post({ channel: 'dev', text: 'x', author: 'a' });
+    const write = (path: string, body: unknown, origin?: string) =>
+      app.request(path, {
+        method: 'POST',
+        headers: { ...HOST, 'content-type': 'application/json', ...(origin ? { origin } : {}) },
+        body: JSON.stringify(body),
+      });
+
+    // No Origin, as from a bare curl; another loopback port; another name or scheme for the host.
+    for (const origin of [
+      undefined,
+      'http://localhost:3773',
+      'http://127.0.0.1:4477',
+      'https://localhost:4477',
+    ]) {
+      for (const [path, body] of [
+        [`/api/threads/${message.id}/replies`, { text: 'injected' }],
+        [`/api/threads/${message.id}/labels`, { set: { decision: 'approved' } }],
+        ['/api/threads', { channel: 'dev', text: 'injected' }],
+      ] as const) {
+        const response = await write(path, body, origin);
+        expect(response.status).toBe(403);
+        expect((await response.json()).reason).toBe('forbidden');
+      }
+    }
+    expect(store.listThreads()).toHaveLength(1);
+    const labels = await post(`/api/threads/${message.id}/labels`, { set: { needs: 'x' } });
+    expect(labels.status).toBe(200);
+    expect(store.getThread(message.id).replies).toEqual([]);
+    expect(store.getThread(message.id).labels).toEqual({ needs: 'x' });
+  });
+});
+
 describe('embedding in rstack code', () => {
   it('serves the page and API on any forwarded loopback port, without frame restrictions', async () => {
     const webRoot = tempDir();
@@ -163,16 +207,18 @@ describe('embedding in rstack code', () => {
       expect(page.headers.get('x-frame-options')).toBeNull();
       expect(page.headers.get('content-security-policy')).toBeNull();
 
-      // The page's own requests carry its forwarded origin; the panel's app may sit on another
-      // loopback port.
-      for (const origin of [`http://${host}`, 'http://localhost:3773']) {
-        const reply = await app.request(`/api/threads/${message.id}/replies`, {
-          method: 'POST',
-          headers: { host, origin, 'content-type': 'application/json' },
-          body: JSON.stringify({ text: `from ${origin}` }),
-        });
-        expect(reply.status).toBe(200);
-      }
+      // The page's own requests carry its forwarded origin, and may read and write.
+      const reply = await app.request(`/api/threads/${message.id}/replies`, {
+        method: 'POST',
+        headers: { host, origin: `http://${host}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ text: `from ${host}` }),
+      });
+      expect(reply.status).toBe(200);
+      // A page on another loopback port, such as the panel's app, may only read.
+      const read = await app.request('/api/channels', {
+        headers: { host, origin: 'http://localhost:3773' },
+      });
+      expect(read.status).toBe(200);
     }
 
     // Anything that is not loopback is still refused.
