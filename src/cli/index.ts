@@ -357,13 +357,14 @@ addFilters(
 program
   .command('checkin [text]')
   .description(
-    "post this session's status to its own thread: under $BOARD_COORDINATOR/workers, or in threads for a one-off",
+    "post this session's status to its own thread: in --channel, else under $BOARD_COORDINATOR/workers, else in threads for a one-off",
   )
   .option('--file <path>', 'read the text from a file, or - for stdin')
   .option(
     '--coordinator <name>',
     'the coordinator this session works for (default: $BOARD_COORDINATOR)',
   )
+  .option('--channel <path>', 'file the thread in this channel; wins over --coordinator')
   .option('--state <state>', 'set the state label, e.g. working, blocked, done')
   .option('--pr <number>', 'set the pr label')
   .option('--needs <what>', 'mark the thread as waiting on the person, e.g. decision')
@@ -375,6 +376,7 @@ program
       options: {
         file?: string;
         coordinator?: string;
+        channel?: string;
         state?: string;
         pr?: string;
         needs?: string;
@@ -383,9 +385,10 @@ program
       },
     ) => {
       const coordinator = options.coordinator || process.env.BOARD_COORDINATOR;
+      // An explicit channel keys its own thread (`#` cannot appear in a channel or coordinator).
       const thread = openStore().checkin({
-        key: `${coordinator ?? ''}:${me()}`,
-        channel: coordinator ? `${coordinator}/workers` : 'threads',
+        key: options.channel ? `#${options.channel}:${me()}` : `${coordinator ?? ''}:${me()}`,
+        channel: options.channel || (coordinator ? `${coordinator}/workers` : 'threads'),
         author: me(),
         text: readText(text, options.file),
         labels: myLabels({
@@ -467,8 +470,14 @@ for (const [name, state, description] of [
   tasks
     .command(`${name} <id> [text]`)
     .description(description)
-    .action((id: string, text: string | undefined) => {
-      const thread = openStore().settle({ id, actor: me(), state, text });
+    .option('--file <path>', 'read the text from a file, or - for stdin')
+    .action((id: string, text: string | undefined, options: { file?: string }) => {
+      const thread = openStore().settle({
+        id,
+        actor: me(),
+        state,
+        text: options.file || text !== undefined ? readText(text, options.file) : undefined,
+      });
       print(thread, formatSummary(thread));
     });
 }

@@ -126,8 +126,9 @@ rstack-board tail [channel|id] [filters]             stream events until Ctrl-C
 rstack-board wait [channel|id] [filters] [--timeout 30m] [--after <cursor|id>]
 rstack-board tasks create <channel> [text]           a thread with state=ready
 rstack-board tasks claim <id> | --ready <channel> [--label <filter>] [--wait <duration>]
-rstack-board tasks complete|fail|release <id> [text]
-rstack-board checkin [text] [--state <s>] [--pr <n>] [--needs <what>] [--coordinator <name>]
+rstack-board tasks complete|fail|release <id> [text] [--file <path|->]
+rstack-board checkin [text] [--file <path|->] [--state <s>] [--pr <n>] [--needs <what>]
+                     [--coordinator <name>] [--channel <path>]
 rstack-board import <state.json> [--project <name>]
 ```
 
@@ -144,10 +145,11 @@ lists every JSON shape, including `status --json`.
   release. Claims do not expire.
 - `--idempotency-key` makes a retried `post` or `reply` return the first
   message instead of posting again.
-- `checkin` keeps one status thread per session. With `$BOARD_COORDINATOR` (or
-  `--coordinator`) set it lives in `<coordinator>/workers`; without, in
-  `threads`, for one-off sessions. The first call starts the thread, later
-  calls reply to it, and each call updates its labels.
+- `checkin` keeps one status thread per session. With `--channel <path>` it
+  lives in that channel; else, with `$BOARD_COORDINATOR` (or `--coordinator`)
+  set, in `<coordinator>/workers`; else in `threads`, for one-off sessions.
+  The first call starts the thread, later calls reply to it, and each call
+  updates its labels.
 - `import` fills the board from one JSON document: items that need you, one
   entry per open pull request, merged pull requests and agent sessions. See
   [`examples/board-state.json`](examples/board-state.json) for the shape. Run

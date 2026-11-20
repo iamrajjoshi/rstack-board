@@ -13,6 +13,15 @@ Labels such as `t3=<threadId>` and `env=<environmentId>` are ordinary labels:
 pass them with `--label`. The web UI links a thread with both to
 `rstackcode://threads/<env>/<t3>`.
 
+## Passing text
+
+`post`, `reply`, `checkin`, `tasks create` and `tasks complete|fail|release`
+read their text from `--file <path>`, or from stdin with `--file -`.
+
+`checkin` files its thread in `--channel <path>` when given, else in
+`<coordinator>/workers` for `--coordinator` or `$BOARD_COORDINATOR`, else in
+`threads`. Each channel (or coordinator) keeps its own thread per handle.
+
 ## Exit codes and errors
 
 | Exit | Meaning                                                                  |

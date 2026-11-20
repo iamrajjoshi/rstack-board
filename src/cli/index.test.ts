@@ -283,6 +283,18 @@ describe('tasks', () => {
     const none = await cli('a', 'tasks', 'claim', '--ready', 'tasks', '--wait', '1s');
     expect(JSON.parse(none.stderr).reason).toBe('nothing_ready');
   }, 30_000);
+
+  it('reads the result of complete, fail and release from --file', async () => {
+    const file = path.join(stateDir, 'result.md');
+    writeFileSync(file, 'Pushed; CI green.');
+    for (const verb of ['complete', 'fail', 'release']) {
+      const task = await json('raj', 'tasks', 'create', 'tasks', `task to ${verb}`);
+      await json('a', 'tasks', 'claim', task.id);
+      expect((await json('a', 'tasks', verb, task.id, '--file', file)).last.text).toBe(
+        'Pushed; CI green.',
+      );
+    }
+  }, 30_000);
 });
 
 describe('checkin', () => {
@@ -317,6 +329,29 @@ describe('checkin', () => {
     expect(again.replies).toHaveLength(1);
     expect(oneOff.channel).toBe('threads');
     expect(oneOff.id).not.toBe(worker.id);
+  }, 30_000);
+
+  it('files the thread in --channel, which wins over the coordinator', async () => {
+    const env = { RSTACK_BOARD_STATE_DIR: stateDir, BOARD_PROFILE: 'search' };
+    const run = async (...args: string[]) =>
+      parseJson<any>(
+        (
+          await runScript('src/cli/index.ts', [...args, '--json'], {
+            ...env,
+            BOARD_COORDINATOR: 'shop',
+          })
+        ).stdout,
+      );
+
+    const worker = await run('checkin', 'Under the coordinator.');
+    const project = await run('checkin', 'In the project.', '--channel', 'rstack-code');
+    const again = await run('checkin', 'Still in the project.', '--channel', 'rstack-code');
+
+    expect(worker.channel).toBe('shop/workers');
+    expect(project.channel).toBe('rstack-code');
+    expect(project.id).not.toBe(worker.id);
+    expect(again.id).toBe(project.id);
+    expect(again.replies).toHaveLength(1);
   }, 30_000);
 });
 
