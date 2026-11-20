@@ -1,6 +1,9 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseJson } from '../shared/json';
 import { Store } from '../shared/store';
+import { tempDir } from '../test/run';
 import type { BoardEvent, Thread, ThreadSummary } from '../shared/types';
 import { createApp } from './index';
 
@@ -141,6 +144,49 @@ describe('local-only access', () => {
       { host: '127.0.0.1:9000', origin: 'http://127.0.0.1:9000' },
     );
     expect(sameOrigin.status).toBe(200);
+  });
+});
+
+describe('embedding in rstack code', () => {
+  it('serves the page and API on any forwarded loopback port, without frame restrictions', async () => {
+    const webRoot = tempDir();
+    mkdirSync(join(webRoot, 'assets'));
+    writeFileSync(join(webRoot, 'index.html'), '<!doctype html><div id="root"></div>');
+    const store = new Store(':memory:');
+    const { message } = store.post({ channel: 'dev', text: 'x', author: 'a' });
+    const app = createApp({ store, person: 'raj', webRoot });
+
+    for (const host of ['127.0.0.1:53124', 'localhost:61000', '[::1]:4478']) {
+      const page = await app.request('/', { headers: { host } });
+      expect(page.status).toBe(200);
+      // rstack code shows the board inside its own browser panel, so nothing may forbid framing.
+      expect(page.headers.get('x-frame-options')).toBeNull();
+      expect(page.headers.get('content-security-policy')).toBeNull();
+
+      // The page's own requests carry its forwarded origin; the panel's app may sit on another
+      // loopback port.
+      for (const origin of [`http://${host}`, 'http://localhost:3773']) {
+        const reply = await app.request(`/api/threads/${message.id}/replies`, {
+          method: 'POST',
+          headers: { host, origin, 'content-type': 'application/json' },
+          body: JSON.stringify({ text: `from ${origin}` }),
+        });
+        expect(reply.status).toBe(200);
+      }
+    }
+
+    // Anything that is not loopback is still refused.
+    for (const origin of ['https://evil.test', 'http://127.0.0.1.evil.test', 'null']) {
+      const response = await app.request(`/api/threads/${message.id}/replies`, {
+        method: 'POST',
+        headers: { host: '127.0.0.1:53124', origin, 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'injected' }),
+      });
+      expect(response.status).toBe(403);
+    }
+    expect(store.getThread(message.id).replies.map((reply) => reply.text)).not.toContain(
+      'injected',
+    );
   });
 });
 

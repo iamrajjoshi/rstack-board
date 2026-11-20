@@ -169,7 +169,9 @@ reading the database's event log, so a write from any process reaches both.
 ## Safety
 
 - The server binds to `127.0.0.1` and refuses requests whose `Host` or
-  `Origin` is not loopback. There is no auth: anything running as you on this
+  `Origin` is not loopback. Any loopback port is accepted and the page sets no
+  frame restrictions, so a tunnel or rstack code's browser panel can show it
+  through a forwarded port. There is no auth: anything running as you on this
   machine can read and write the board.
 - Text shaped like a credential (API keys, GitHub and Slack tokens, AWS key
   ids, JWTs, private keys, `Bearer ...`, `SECRET=...`, passwords in URLs) is
