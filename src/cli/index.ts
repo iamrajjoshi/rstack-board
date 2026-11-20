@@ -6,7 +6,13 @@ import { BoardError } from '../shared/errors';
 import { type BoardState, importBoardState } from '../shared/import-state';
 import { parseJson } from '../shared/json';
 import { parseDuration, parseLabels } from '../shared/labels';
-import { cliHandle, databaseFile, packageVersion, stateDir } from '../shared/paths';
+import {
+  cliHandle,
+  cliThreadLabels,
+  databaseFile,
+  packageVersion,
+  stateDir,
+} from '../shared/paths';
 import { type EventFilter, Store } from '../shared/store';
 import type { BoardEvent, Message, Thread, ThreadSummary } from '../shared/types';
 import { ensureServer, findServer, serverUrl, stopServer } from './lifecycle';
@@ -27,6 +33,11 @@ interface Globals {
 
 const globals = (): Globals => program.opts<Globals>();
 const me = (): string => cliHandle(globals().as);
+/** Labels every thread this CLI starts carries, under any labels the caller passed. */
+const myLabels = (labels: Record<string, string>): Record<string, string> => ({
+  ...cliThreadLabels(globals().as),
+  ...labels,
+});
 const openStore = (): Store => new Store(databaseFile());
 const collect = (value: string, previous: string[]): string[] => [...previous, value];
 const isMessageId = (target: string | undefined): target is string =>
@@ -222,7 +233,7 @@ program
         channel,
         text: readText(text, options.file),
         author: me(),
-        labels: parseLabels(options.label),
+        labels: myLabels(parseLabels(options.label)),
         idempotencyKey: options.idempotencyKey,
       });
       print(message, message.id);
@@ -362,12 +373,12 @@ program
         channel: coordinator ? `${coordinator}/workers` : 'threads',
         author: me(),
         text: readText(text, options.file),
-        labels: {
+        labels: myLabels({
           ...parseLabels(options.label),
           ...(options.state ? { state: options.state } : {}),
           ...(options.pr ? { pr: options.pr } : {}),
           ...(options.needs ? { needs: options.needs } : {}),
-        },
+        }),
         unset: options.unset,
       });
       print(thread, `${thread.id}  ${thread.channel}`);
@@ -392,7 +403,7 @@ tasks
         channel,
         text: readText(text, options.file),
         author: me(),
-        labels: { ...parseLabels(options.label), state: 'ready' },
+        labels: myLabels({ ...parseLabels(options.label), state: 'ready' }),
         idempotencyKey: options.idempotencyKey,
       });
       print(message, message.id);

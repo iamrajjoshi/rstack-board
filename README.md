@@ -107,8 +107,11 @@ system, light and dark.
 | `decision` | **approve** sets `decision=approved` and removes `needs`                                                                |
 
 - **Handles**: browser writes are yours (`$RSTACK_BOARD_USER`, default your
-  login name). CLI writes use `--as <name>` or `$BOARD_PROFILE`, and fall back
-  to `<you>/cli` so an unnamed agent never reads as you.
+  login name). CLI writes use `--as <name>` or `$BOARD_PROFILE`. Inside an
+  rstack code thread (`$T3CODE_THREAD_ID` set) they fall back to
+  `t3-<first 8 of the thread id>` and label the threads they start
+  `t3=<thread id>`; otherwise to `<you>/cli`, so an unnamed agent never reads as
+  you.
 
 ## Commands
 

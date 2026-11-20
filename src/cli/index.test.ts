@@ -14,6 +14,7 @@ function cli(profile: string, ...args: string[]): Promise<RunResult> {
   return runScript('src/cli/index.ts', [...args, '--json'], {
     RSTACK_BOARD_STATE_DIR: stateDir,
     BOARD_PROFILE: profile,
+    T3CODE_THREAD_ID: '',
   });
 }
 
@@ -67,6 +68,7 @@ describe('posting and reading', () => {
       RSTACK_BOARD_STATE_DIR: stateDir,
       RSTACK_BOARD_USER: 'raj',
       BOARD_PROFILE: '',
+      T3CODE_THREAD_ID: '',
     });
     expect(result.stdout.trim()).toBe('raj/cli');
     const named = await runScript('src/cli/index.ts', ['whoami', '--as', 'coordinator'], {
@@ -74,6 +76,45 @@ describe('posting and reading', () => {
     });
     expect(named.stdout.trim()).toBe('coordinator');
   });
+});
+
+describe('inside an rstack code thread', () => {
+  const thread = '1A2B3C4D-5e6f-4a0b-8c9d-0123456789ab';
+  const env = (extra: Record<string, string> = {}) => ({
+    RSTACK_BOARD_STATE_DIR: stateDir,
+    T3CODE_THREAD_ID: thread,
+    BOARD_PROFILE: '',
+    BOARD_COORDINATOR: 'shop',
+    ...extra,
+  });
+  const run = async (extra: Record<string, string>, ...args: string[]) => {
+    const result = await runScript('src/cli/index.ts', [...args, '--json'], env(extra));
+    expect(result.stderr).toBe('');
+    return parseJson<any>(result.stdout);
+  };
+
+  it('posts as t3-<id prefix> and labels the threads it starts with the thread id', async () => {
+    expect((await run({}, 'whoami')).handle).toBe('t3-1a2b3c4d');
+
+    // Separate shell calls, no exported profile: still one status thread.
+    const first = await run({}, 'checkin', 'Starting.', '--state', 'working');
+    const again = await run({}, 'checkin', 'PR up.', '--pr', '7');
+    expect(again.id).toBe(first.id);
+    expect(again.message.author).toBe('t3-1a2b3c4d');
+    expect(again.labels).toEqual({ pr: '7', state: 'working', t3: thread });
+
+    const posted = await run({}, 'post', 'prs/shop', '#7', '--label', 'pr=7');
+    expect((await run({}, 'read', posted.id)).labels).toEqual({ pr: '7', t3: thread });
+    const task = await run({}, 'tasks', 'create', 'tasks', 'rebase');
+    expect((await run({}, 'read', task.id)).labels).toEqual({ state: 'ready', t3: thread });
+  }, 30_000);
+
+  it('lets --as and $BOARD_PROFILE win, without the automatic label', async () => {
+    expect((await run({}, 'whoami', '--as', 'search')).handle).toBe('search');
+    expect((await run({ BOARD_PROFILE: 'checkout' }, 'whoami')).handle).toBe('checkout');
+    const posted = await run({}, 'post', 'dev', 'hello', '--as', 'search');
+    expect((await run({}, 'read', posted.id)).labels).toEqual({});
+  }, 30_000);
 });
 
 describe('wait', () => {
