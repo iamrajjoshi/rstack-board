@@ -1,4 +1,4 @@
-import { STATE_LABEL, type ThreadSummary } from '../shared/types';
+import { type Labels, STATE_LABEL, type ThreadSummary } from '../shared/types';
 
 export type View =
   | { kind: 'needs' }
@@ -106,4 +106,21 @@ export function matchesTaskTab(thread: ThreadSummary, tab: string): boolean {
     return true;
   }
   return tab === 'open' ? !CLOSED_STATES.has(state) : state === tab;
+}
+
+/**
+ * The rstack code thread a board thread came from: `t3=<threadId>` and, when the environment is
+ * known, `env=<environmentId>`. rstack code opens `rstackcode://threads/<env>/<thread>`; without
+ * the environment there is no link, only the id.
+ */
+export function rstackCodeThread(labels: Labels): { id: string; link: string | null } | null {
+  const id = labels.t3;
+  if (!id) {
+    return null;
+  }
+  const env = labels.env;
+  const link = env
+    ? `rstackcode://threads/${encodeURIComponent(env)}/${encodeURIComponent(id)}`
+    : null;
+  return { id, link };
 }

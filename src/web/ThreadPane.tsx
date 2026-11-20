@@ -1,8 +1,9 @@
-import { Check, Pause, Play, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Pause, Play, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { type Labels, NEEDS_LABEL, type Thread } from '../shared/types';
 import { changeLabels, postReply } from './api';
 import { Composer } from './Composer';
+import { rstackCodeThread } from './format';
 import { Chips, TaskLine } from './marks';
 import { MessageFrame, MessageText } from './MessageView';
 
@@ -43,6 +44,7 @@ export function ThreadPane({
     }
   };
 
+  const origin = rstackCodeThread(thread.labels);
   const needs = thread.labels[NEEDS_LABEL];
   const held = thread.labels.hold !== undefined;
 
@@ -52,6 +54,21 @@ export function ThreadPane({
         <span className="title">thread</span>
         <span className="meta">#{thread.channel}</span>
         <span className="spacer" />
+        {origin?.link && (
+          <a className="origin" href={origin.link} title={`rstack code thread ${origin.id}`}>
+            <ExternalLink size={12} /> open in rstack code
+          </a>
+        )}
+        {origin && !origin.link && (
+          <button
+            type="button"
+            className="origin"
+            title="copy the rstack code thread id"
+            onClick={() => void navigator.clipboard?.writeText(origin.id)}
+          >
+            <Copy size={12} /> <span className="id">{origin.id.slice(0, 8)}</span>
+          </button>
+        )}
         <button type="button" className="icon-button" title="close (esc)" onClick={onClose}>
           <X size={14} />
         </button>

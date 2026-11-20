@@ -7,6 +7,7 @@ import {
   oneLine,
   parseFilter,
   parseRoute,
+  rstackCodeThread,
   taskTabs,
   timeAgo,
 } from './format';
@@ -75,4 +76,13 @@ it('offers a tab per state present, open states first, and counts closed states 
   expect(titles('open')).toEqual(['ready', 'triage', 'blocked', 'ready']);
   expect(titles('done')).toEqual(['done']);
   expect(titles('all')).toHaveLength(5);
+});
+
+it('links a thread from rstack code back to it, or gives only the id without an environment', () => {
+  expect(rstackCodeThread({ t3: 'th-1', env: 'env 1' })).toEqual({
+    id: 'th-1',
+    link: 'rstackcode://threads/env%201/th-1',
+  });
+  expect(rstackCodeThread({ t3: 'th-1' })).toEqual({ id: 'th-1', link: null });
+  expect(rstackCodeThread({ env: 'env-1' })).toBeNull();
 });
