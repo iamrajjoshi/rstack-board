@@ -11,7 +11,13 @@
     <script>
       (() => {
         try {
-          const preference = window.localStorage.getItem('rstack-board:theme');
+          // A ?theme= in the URL overrides the saved choice for this tab's session only.
+          const key = 'rstack-board:theme';
+          const override = new URLSearchParams(window.location.search).get('theme');
+          if (override === 'system' || override === 'light' || override === 'dark') {
+            window.sessionStorage.setItem(key, override);
+          }
+          const preference = window.sessionStorage.getItem(key) ?? window.localStorage.getItem(key);
           const system = window.matchMedia('(prefers-color-scheme: dark)').matches
             ? 'dark'
             : 'light';

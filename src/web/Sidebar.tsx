@@ -3,16 +3,15 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import type { ChannelSummary } from '../shared/types';
 import { splitHandle, type View } from './format';
+import { hasSessionTheme, initialTheme, THEME_KEY, type Theme } from './theme';
 
-const THEME_KEY = 'rstack-board:theme';
-type Theme = 'system' | 'light' | 'dark';
 const NEXT_THEME: Record<Theme, Theme> = { system: 'light', light: 'dark', dark: 'system' };
 const THEME_ICONS = { system: Monitor, light: Sun, dark: Moon };
 
 function applyTheme(theme: Theme): void {
   const system = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   document.documentElement.dataset.theme = theme === 'system' ? system : theme;
-  window.localStorage.setItem(THEME_KEY, theme);
+  (hasSessionTheme() ? window.sessionStorage : window.localStorage).setItem(THEME_KEY, theme);
 }
 
 /** A coordinator's channels summed into one line, such as `2 need you · 3 ready · 4 working`. */
@@ -63,10 +62,13 @@ export function Sidebar({
   openTasks: number;
   onNavigate: (view: View) => void;
 }) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    const stored = window.localStorage.getItem(THEME_KEY);
-    return stored === 'light' || stored === 'dark' ? stored : 'system';
-  });
+  const [theme, setTheme] = useState<Theme>(() =>
+    initialTheme(
+      window.location.search,
+      window.sessionStorage.getItem(THEME_KEY),
+      window.localStorage.getItem(THEME_KEY),
+    ),
+  );
   const ThemeIcon = THEME_ICONS[theme];
   const needs = channels.reduce((sum, channel) => sum + channel.needs, 0);
 

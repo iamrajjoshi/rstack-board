@@ -90,7 +90,8 @@ thread pane.
   editing and **approve**, **resolve**, **hold** and **release**. Esc closes it.
 
 Everything updates live. The theme button in the sidebar switches between
-system, light and dark.
+system, light and dark; `?theme=dark|light|system` in the URL (before any
+`#/...`) overrides it for that tab's session without changing the saved choice.
 
 ## Model
 
