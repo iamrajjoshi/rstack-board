@@ -162,6 +162,15 @@ describe('machine-readable output', () => {
       schemaVersion: 2,
       handle: 'bridge',
     });
+    expect(status.features).toEqual(
+      expect.arrayContaining([
+        'via',
+        'tail-after',
+        'checkin-channel',
+        'tasks-file',
+        'needs-sticky',
+      ]),
+    );
     expect(status.version).toMatch(/^\d+\.\d+\.\d+/);
     expect(typeof status.person).toBe('string');
   });

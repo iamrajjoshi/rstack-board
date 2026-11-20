@@ -19,6 +19,16 @@ import type { BoardEvent, Message, Thread, ThreadSummary, Via } from '../shared/
 import { ensureServer, findServer, serverUrl, stopServer } from './lifecycle';
 
 const POLL_MS = 200;
+/** What this CLI supports, for `status --json`, so a bridge can tell an older CLI apart. */
+const FEATURES = [
+  'via',
+  'tail-after',
+  'wait-after',
+  'idempotency-key',
+  'checkin-channel',
+  'tasks-file',
+  'needs-sticky',
+];
 
 const program = new Command()
   .name('rstack-board')
@@ -189,6 +199,7 @@ program
       schemaVersion: SCHEMA_VERSION,
       handle: me(),
       person: personHandle(),
+      features: FEATURES,
       server: info ? { ...info, url: serverUrl(info) } : null,
     };
     print(
