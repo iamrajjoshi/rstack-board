@@ -1,0 +1,44 @@
+/*
+ * Every colour the board uses, and nothing else. Values follow rstack code's "rstack" theme
+ * (packages/shared/src/themePalettes.ts) so the two can be synced by copying this block.
+ * The light block is the default; index.html sets data-theme from the system or the toggle.
+ */
+:root {
+  color-scheme: light;
+  --canvas: #fcfcfc;
+  --sidebar: #f3f4f5;
+  --surface: #ffffff;
+  --hover: #eaebed;
+  --border: #e4e5e8;
+  --border-strong: #d3d5da;
+  --text: #26272c;
+  --text-muted: #62646b;
+  --accent: #0075b5;
+  --accent-text: #ffffff;
+  --action: #cd0c8c;
+  --action-text: #ffffff;
+  --cyan: #00788a;
+  --green: #1a7f37;
+  --yellow: #6e7500;
+  --red: #db172a;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #1b1c23;
+  --sidebar: #17181e;
+  --surface: #23242d;
+  --hover: #2a2b35;
+  --border: #34353f;
+  --border-strong: #474853;
+  --text: #ebece6;
+  --text-muted: #a0a1aa;
+  --accent: #49baff;
+  --accent-text: #131318;
+  --action: #fc4cb4;
+  --action-text: #131318;
+  --cyan: #8be9fd;
+  --green: #50fb7b;
+  --yellow: #f0fb8c;
+  --red: #fc4346;
+}

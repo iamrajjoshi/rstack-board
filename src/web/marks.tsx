@@ -12,22 +12,22 @@ import {
 } from 'lucide-react';
 import { type Labels, NEEDS_LABEL, OWNER_LABEL, STATE_LABEL } from '../shared/types';
 
-type Tone = 'bright' | 'dim' | 'faint' | 'red';
+type Tone = 'working' | 'ready' | 'done' | 'blocked' | 'failed' | 'idle';
 
 // Unknown states get the plain circle.
 const STATE_MARKS: Record<string, { icon: LucideIcon; tone: Tone }> = {
-  draft: { icon: CircleDashed, tone: 'faint' },
-  ready: { icon: Circle, tone: 'bright' },
-  claimed: { icon: CircleDot, tone: 'bright' },
-  work: { icon: CircleDot, tone: 'bright' },
-  working: { icon: CircleDot, tone: 'bright' },
-  review: { icon: CircleEllipsis, tone: 'bright' },
-  blocked: { icon: CirclePause, tone: 'bright' },
-  parked: { icon: CirclePause, tone: 'faint' },
-  idle: { icon: CirclePause, tone: 'faint' },
-  done: { icon: CircleCheck, tone: 'dim' },
-  merged: { icon: GitMerge, tone: 'dim' },
-  failed: { icon: CircleX, tone: 'red' },
+  draft: { icon: CircleDashed, tone: 'idle' },
+  ready: { icon: Circle, tone: 'ready' },
+  claimed: { icon: CircleDot, tone: 'working' },
+  work: { icon: CircleDot, tone: 'working' },
+  working: { icon: CircleDot, tone: 'working' },
+  review: { icon: CircleEllipsis, tone: 'working' },
+  blocked: { icon: CirclePause, tone: 'blocked' },
+  parked: { icon: CirclePause, tone: 'idle' },
+  idle: { icon: CirclePause, tone: 'idle' },
+  done: { icon: CircleCheck, tone: 'done' },
+  merged: { icon: GitMerge, tone: 'done' },
+  failed: { icon: CircleX, tone: 'failed' },
 };
 
 /** A thread's state as an icon and its name; nothing when the thread has no state. */
@@ -36,7 +36,7 @@ export function StateMark({ labels }: { labels: Labels }) {
   if (!state) {
     return null;
   }
-  const { icon: Icon, tone } = STATE_MARKS[state] ?? { icon: Circle, tone: 'bright' as const };
+  const { icon: Icon, tone } = STATE_MARKS[state] ?? { icon: Circle, tone: 'idle' as const };
   return (
     <span className={`state tone-${tone}`}>
       <Icon size={13} />
@@ -70,7 +70,7 @@ export function Chips({ labels, onRemove }: { labels: Labels; onRemove?: (key: s
   return (
     <span className="chips">
       {entries.map(([key, value]) => (
-        <span key={key} className={`chip${key === NEEDS_LABEL ? ' needs' : ''}`}>
+        <span key={key} className={`chip${key === NEEDS_LABEL || key === 'hold' ? ` ${key}` : ''}`}>
           {key}={value}
           {onRemove && (
             <button type="button" title={`remove ${key}`} onClick={() => onRemove(key)}>
