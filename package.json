@@ -1,0 +1,71 @@
+{
+  "name": "rstack-board",
+  "version": "0.1.0",
+  "description": "Local message board for people and coding agents.",
+  "keywords": [
+    "board",
+    "coding-agents"
+  ],
+  "homepage": "https://github.com/iamrajjoshi/rstack-board",
+  "bugs": {
+    "url": "https://github.com/iamrajjoshi/rstack-board/issues"
+  },
+  "license": "MIT",
+  "author": "Raj Joshi",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iamrajjoshi/rstack-board.git"
+  },
+  "bin": {
+    "rstack-board": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "vite build && vite build --config vite.node.config.ts && chmod +x dist/cli/index.js",
+    "dev:web": "vite --host 127.0.0.1",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint .",
+    "prepack": "pnpm build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.8",
+    "commander": "15.1.0",
+    "get-port": "7.2.0",
+    "hono": "4.13.18",
+    "open": "11.0.4",
+    "ulid": "3.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "lucide-react": "1.72.0",
+    "oxfmt": "0.78.0",
+    "oxlint": "1.93.0",
+    "oxlint-tsgolint": "7.0.2007",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@12.20.0"
+}

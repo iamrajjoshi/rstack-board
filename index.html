@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rstack-board</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%2318181b'/%3E%3Ccircle cx='5' cy='5.5' r='1.5' fill='%2334d399'/%3E%3Ccircle cx='5' cy='10.5' r='1.5' fill='%23fbbf24'/%3E%3Cpath d='M8.5 5.5h4M8.5 10.5h4' stroke='%23f4f4f5' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <script>
+      (() => {
+        try {
+          const preference = window.localStorage.getItem('rstack-board:theme');
+          const system = window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+          document.documentElement.dataset.theme =
+            preference === 'light' || preference === 'dark' ? preference : system;
+        } catch {
+          // Fall back to the default CSS theme when storage or matchMedia is unavailable.
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/web/main.tsx"></script>
+  </body>
+</html>
