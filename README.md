@@ -82,7 +82,8 @@ thread pane.
   `artemis/prs` and `artemis/workers` sit under `artemis`, with a roll-up such
   as `2 need you · 3 ready · 4 working`. Clicking the name shows everything
   under it. Flat channels, such as `threads` for one-off sessions, are listed
-  after.
+  after. A long name such as rstack code's `<title-slug>-<hash>` is cut
+  short before its hash; hover it for the full name.
 - **channels**: one feed per channel, with a composer to start a thread there;
   its **task** toggle posts the thread as `state=ready` for an agent to claim.
 - **thread pane**: the root message, its replies and a reply box, plus label

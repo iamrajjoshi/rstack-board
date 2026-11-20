@@ -2,7 +2,7 @@ import { Activity, CircleDot, ListTodo, Monitor, Moon, Network, Sun } from 'luci
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import type { ChannelSummary } from '../shared/types';
-import type { View } from './format';
+import { splitHandle, type View } from './format';
 
 const THEME_KEY = 'rstack-board:theme';
 type Theme = 'system' | 'light' | 'dark';
@@ -29,6 +29,20 @@ function rollup(channels: ChannelSummary[]): string {
       .filter(([count]) => count > 0)
       .map(([count, label]) => `${count} ${label}`)
       .join(' · ') || 'nothing open'
+  );
+}
+
+/** A long name with its slug cut short and its hash kept; the full name is in the tooltip. */
+function HandleName({ name, prefix = '' }: { name: string; prefix?: string }) {
+  const { base, hash } = splitHandle(name);
+  return (
+    <span className="handle">
+      <span className="base">
+        {prefix}
+        {base}
+      </span>
+      {hash && <span className="hash">{hash}</span>}
+    </span>
   );
 }
 
@@ -61,6 +75,7 @@ export function Sidebar({
       type="button"
       key={target.kind === 'channel' ? target.channel : target.kind}
       className={`item${sameView(view, target) ? ' current' : ''}${attention ? ' unread' : ''}`}
+      title={target.kind === 'channel' ? target.channel : undefined}
       onClick={() => onNavigate(target)}
     >
       <span className="name">{label}</span>
@@ -120,10 +135,11 @@ export function Sidebar({
               <button
                 type="button"
                 className={`item coordinator-name${sameView(view, target) ? ' current' : ''}`}
+                title={name}
                 onClick={() => onNavigate(target)}
               >
                 <span className="name">
-                  <Network size={13} /> {name}
+                  <Network size={13} /> <HandleName name={name} />
                 </span>
               </button>
               <div className="rollup">{rollup(members)}</div>
@@ -142,7 +158,7 @@ export function Sidebar({
         {flat.map((channel) =>
           item(
             { kind: 'channel', channel: channel.channel },
-            `#${channel.channel}`,
+            <HandleName name={channel.channel} prefix="#" />,
             channel.threads,
             channel.needs > 0,
           ),

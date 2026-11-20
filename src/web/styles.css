@@ -148,6 +148,22 @@ time,
   white-space: nowrap;
 }
 
+.handle {
+  display: flex;
+  min-width: 0;
+}
+
+.handle .base {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.handle .hash {
+  flex: none;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .item.unread {
   font-weight: 600;
   color: var(--text);
@@ -239,9 +255,13 @@ time,
 }
 
 .title {
+  min-width: 0;
+  overflow: hidden;
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .spacer {

@@ -28,6 +28,16 @@ export function formatRoute({ view, threadId }: Route): string {
   return `#/${path}${threadId ? `?thread=${threadId}` : ''}`;
 }
 
+/**
+ * Splits a name such as `parallel-board-bridge-te-kebjxw` into its slug and a trailing six-character
+ * hash, the shape of rstack code's handles, so the slug can be cut short and the hash kept. Other
+ * names are all `base`. A six-letter last word also matches; that only changes how it is drawn.
+ */
+export function splitHandle(name: string): { base: string; hash: string } {
+  const match = /^(.+)(-[a-z0-9]{6})$/.exec(name);
+  return match?.[1] && match[2] ? { base: match[1], hash: match[2] } : { base: name, hash: '' };
+}
+
 /** Splits the filter box into label filters (`state=ready`) and free text. */
 export function parseFilter(input: string): { labels: string[]; text: string } {
   const words = input.split(/\s+/).filter(Boolean);

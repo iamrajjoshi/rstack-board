@@ -8,6 +8,7 @@ import {
   parseFilter,
   parseRoute,
   rstackCodeThread,
+  splitHandle,
   taskTabs,
   timeAgo,
 } from './format';
@@ -85,4 +86,17 @@ it('links a thread from rstack code back to it, or gives only the id without an 
   });
   expect(rstackCodeThread({ t3: 'th-1' })).toEqual({ id: 'th-1', link: null });
   expect(rstackCodeThread({ env: 'env-1' })).toBeNull();
+});
+
+it('splits a trailing six-character hash off a handle, and leaves other names whole', () => {
+  expect(splitHandle('parallel-board-bridge-te-kebjxw')).toEqual({
+    base: 'parallel-board-bridge-te',
+    hash: '-kebjxw',
+  });
+  expect(splitHandle('fix-flaky-search-1x9k2b')).toEqual({
+    base: 'fix-flaky-search',
+    hash: '-1x9k2b',
+  });
+  expect(splitHandle('artemis')).toEqual({ base: 'artemis', hash: '' });
+  expect(splitHandle('-abc123')).toEqual({ base: '-abc123', hash: '' });
 });

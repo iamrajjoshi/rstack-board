@@ -140,7 +140,9 @@ export function App() {
       />
       <main className="main">
         <header className="header">
-          <span className="title">{heading.title}</span>
+          <span className="title" title={heading.title}>
+            {heading.title}
+          </span>
           <span className="meta">{heading.meta}</span>
           <span className="spacer" />
           <label className="filter">
