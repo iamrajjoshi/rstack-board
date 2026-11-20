@@ -1,0 +1,55 @@
+{
+  "needs_you": [
+    {
+      "kind": "decide",
+      "title": "#101 Gift cards: ship behind a flag, or to everyone?",
+      "url": "https://github.com/example/shop/pull/101",
+      "detail": "Approved and green; held for your yes."
+    },
+    {
+      "kind": "do",
+      "title": "Confirm the test refund in the staging store",
+      "detail": "An agent could not: the confirm button needs a signed-in person."
+    }
+  ],
+  "threads": [
+    {
+      "number": 101,
+      "title": ":sparkles: feat: add gift cards to checkout",
+      "url": "https://github.com/example/shop/pull/101",
+      "channel": "checkout",
+      "state": "review",
+      "labels": [
+        { "text": "held for you", "tone": "warn" },
+        { "text": "approved: sam", "tone": "ok" },
+        { "text": "checks green", "tone": "ok" },
+        { "text": "checkout agent", "tone": "" }
+      ],
+      "note": "Gift cards can pay for part of an order."
+    },
+    {
+      "number": 102,
+      "title": "fix: search drops accented queries",
+      "url": "https://github.com/example/shop/pull/102",
+      "channel": "search",
+      "state": "blocked",
+      "labels": [
+        { "text": "needs approval", "tone": "warn" },
+        { "text": "conflicts with main", "tone": "bad" },
+        { "text": "2 open threads", "tone": "bad" },
+        { "text": "failing: lint, test", "tone": "bad" },
+        { "text": "stacked on search-index", "tone": "" }
+      ],
+      "note": ""
+    }
+  ],
+  "merged": [
+    {
+      "number": 99,
+      "title": "fix: cart badge count",
+      "url": "https://github.com/example/shop/pull/99",
+      "at": "2026-11-19T22:00:00Z"
+    }
+  ],
+  "sessions": [{ "state": "working", "title": "Search", "holds": "#102 accented queries" }]
+}

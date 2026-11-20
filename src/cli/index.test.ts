@@ -1,0 +1,262 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { parseJson } from '../shared/json';
+import { type RunResult, runScript, tempDir } from '../test/run';
+
+let stateDir: string;
+beforeEach(() => {
+  stateDir = tempDir();
+});
+
+/** Runs the CLI as the named agent against this test's own board. */
+function cli(profile: string, ...args: string[]): Promise<RunResult> {
+  return runScript('src/cli/index.ts', [...args, '--json'], {
+    RSTACK_BOARD_STATE_DIR: stateDir,
+    BOARD_PROFILE: profile,
+  });
+}
+
+async function json<T = any>(profile: string, ...args: string[]): Promise<T> {
+  const result = await cli(profile, ...args);
+  expect(result.stderr).toBe('');
+  return parseJson<T>(result.stdout);
+}
+
+describe('posting and reading', () => {
+  it('posts, replies, labels and reads back a thread', async () => {
+    const root = await json('ui', 'post', 'prs/ui', '**#7 Cart badge**', '--label', 'state=review');
+    await json('ui', 'reply', root.id, 'pushed the fix');
+    await json('ui', 'label', root.id, 'state=ready', 'owner=ui', '--unset', 'missing');
+
+    const thread = await json('other', 'read', root.id);
+    expect(thread.title).toBe('#7 Cart badge');
+    expect(thread.labels).toEqual({ owner: 'ui', state: 'ready' });
+    expect(thread.replies.map((reply: any) => [reply.author, reply.text])).toEqual([
+      ['ui', 'pushed the fix'],
+    ]);
+
+    const listed = await json('other', 'read', 'prs/', '--label', 'state=ready');
+    expect(listed.threads.map((t: any) => t.id)).toEqual([root.id]);
+    expect((await json('other', 'read', 'prs/', '--label', 'state=review')).threads).toEqual([]);
+    expect((await json('other', 'channels')).channels).toEqual([
+      { channel: 'prs/ui', threads: 1, needs: 0, ready: 1, working: 0 },
+    ]);
+  });
+
+  it('does not post twice for a retried idempotency key, and reads text from a file', async () => {
+    const file = path.join(stateDir, 'note.md');
+    writeFileSync(file, '# Plan\n\nstep one');
+    const args = ['post', 'dev', '--file', file, '--idempotency-key', 'plan-1'];
+    const first = await json('a', ...args);
+    const retry = await json('a', ...args);
+
+    expect(retry.id).toBe(first.id);
+    expect((await json('a', 'read', 'dev')).threads).toHaveLength(1);
+    expect((await json('a', 'read', first.id)).title).toBe('Plan');
+  });
+
+  it('reports failures as a reason on stderr with exit code 1', async () => {
+    const result = await cli('a', 'reply', 'msg_missing', 'hello');
+    expect(result.code).toBe(1);
+    expect(JSON.parse(result.stderr).reason).toBe('not_found');
+  });
+
+  it('posts as <person>/cli when no profile is set', async () => {
+    const result = await runScript('src/cli/index.ts', ['whoami'], {
+      RSTACK_BOARD_STATE_DIR: stateDir,
+      RSTACK_BOARD_USER: 'raj',
+      BOARD_PROFILE: '',
+    });
+    expect(result.stdout.trim()).toBe('raj/cli');
+    const named = await runScript('src/cli/index.ts', ['whoami', '--as', 'coordinator'], {
+      RSTACK_BOARD_STATE_DIR: stateDir,
+    });
+    expect(named.stdout.trim()).toBe('coordinator');
+  });
+});
+
+describe('wait', () => {
+  it("blocks until another author replies, ignoring the waiter's own messages", async () => {
+    const question = await json(
+      'agent',
+      'post',
+      'needs-you',
+      'Merge?',
+      '--label',
+      'needs=decision',
+    );
+    const waiting = cli('agent', 'wait', question.id, '--timeout', '30s');
+    await json('agent', 'reply', question.id, 'still waiting');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await json('raj', 'reply', question.id, 'yes, merge');
+
+    const result = await waiting;
+    expect(result.code).toBe(0);
+    const event = JSON.parse(result.stdout);
+    expect(event).toMatchObject({ type: 'message.posted', actor: 'raj' });
+    expect(event.message.text).toBe('yes, merge');
+  }, 30_000);
+
+  it('returns at once for an answer that arrived before the wait started', async () => {
+    const question = await json('agent', 'post', 'needs-you', 'Merge?');
+    await json('raj', 'label', question.id, 'decision=approved');
+    const event = await json('agent', 'wait', question.id, '--timeout', '5s');
+    expect(event).toMatchObject({ type: 'labels.changed', set: { decision: 'approved' } });
+
+    // Resuming after that event finds nothing new.
+    const again = await cli(
+      'agent',
+      'wait',
+      question.id,
+      '--after',
+      String(event.cursor),
+      '--timeout',
+      '1s',
+    );
+    expect(again.code).toBe(1);
+    expect(JSON.parse(again.stderr).reason).toBe('timeout');
+  }, 30_000);
+
+  it('wakes on a matching thread appearing in a channel', async () => {
+    const waiting = cli(
+      'coordinator',
+      'wait',
+      'prs/',
+      '--label',
+      'state=ready',
+      '--timeout',
+      '30s',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await json('ui', 'post', 'prs/ui', 'not ready yet', '--label', 'state=draft');
+    const ready = await json('ui', 'post', 'prs/ui', 'ready one', '--label', 'state=ready');
+
+    const event = JSON.parse((await waiting).stdout);
+    expect(event.threadId).toBe(ready.id);
+  }, 30_000);
+});
+
+describe('tasks', () => {
+  it('creates, claims, completes and releases', async () => {
+    const first = await json('raj', 'tasks', 'create', 'tasks', 'rebase #7');
+    const second = await json('raj', 'tasks', 'create', 'tasks', 'fix lint');
+
+    expect((await json('a', 'tasks', 'claim', '--ready', 'tasks')).id).toBe(first.id);
+    const taken = await cli('b', 'tasks', 'claim', first.id);
+    expect(JSON.parse(taken.stderr).reason).toBe('task_claimed');
+    const notMine = await cli('b', 'tasks', 'complete', first.id, 'done');
+    expect(JSON.parse(notMine.stderr).reason).toBe('claim_not_held');
+
+    const done = await json('a', 'tasks', 'complete', first.id, 'rebased and pushed');
+    expect(done.labels).toEqual({ owner: 'a', state: 'done' });
+    expect(done.last.text).toBe('rebased and pushed');
+
+    await json('b', 'tasks', 'claim', second.id);
+    expect((await json('b', 'tasks', 'release', second.id)).labels).toEqual({ state: 'ready' });
+    const failed = await json('a', 'tasks', 'claim', '--ready', 'tasks');
+    expect((await json('a', 'tasks', 'fail', failed.id, 'cannot reproduce')).labels.state).toBe(
+      'failed',
+    );
+    const none = await cli('a', 'tasks', 'claim', '--ready', 'tasks', '--wait', '1s');
+    expect(JSON.parse(none.stderr).reason).toBe('nothing_ready');
+  }, 30_000);
+});
+
+describe('checkin', () => {
+  it('files a worker under its coordinator and a one-off under threads', async () => {
+    const env = { RSTACK_BOARD_STATE_DIR: stateDir, BOARD_PROFILE: 'search' };
+    const run = async (extra: Record<string, string>, ...args: string[]) =>
+      parseJson<any>(
+        (await runScript('src/cli/index.ts', [...args, '--json'], { ...env, ...extra })).stdout,
+      );
+
+    const worker = await run(
+      { BOARD_COORDINATOR: 'shop' },
+      'checkin',
+      'Starting.',
+      '--state',
+      'working',
+    );
+    const again = await run(
+      { BOARD_COORDINATOR: 'shop' },
+      'checkin',
+      'Done, PR up.',
+      '--state',
+      'done',
+      '--pr',
+      '102',
+    );
+    const oneOff = await run({ BOARD_COORDINATOR: '' }, 'checkin', 'Fixing a typo.');
+
+    expect(worker.channel).toBe('shop/workers');
+    expect(again.id).toBe(worker.id);
+    expect(again.labels).toEqual({ pr: '102', state: 'done' });
+    expect(again.replies).toHaveLength(1);
+    expect(oneOff.channel).toBe('threads');
+    expect(oneOff.id).not.toBe(worker.id);
+  }, 30_000);
+});
+
+describe('import', () => {
+  it('fills the board from a state document and refreshes it on a rerun', async () => {
+    const fixture = 'examples/board-state.json';
+    expect(await json('coordinator', 'import', fixture)).toEqual({ created: 6, updated: 0 });
+
+    const needs = (await json('raj', 'read', '--label', 'needs')).threads;
+    expect(needs.map((t: any) => [t.channel, t.labels])).toEqual(
+      expect.arrayContaining([
+        ['needs-you', { needs: 'decision', pr: '101' }],
+        ['needs-you', { needs: 'action' }],
+      ]),
+    );
+    const [held] = (await json('raj', 'read', 'prs/checkout')).threads;
+    expect(held.title).toBe('#101 feat: add gift cards to checkout');
+    expect(held.labels).toEqual({
+      approved: 'sam',
+      checks: 'green',
+      hold: 'held for you',
+      owner: 'checkout agent',
+      pr: '101',
+      state: 'review',
+    });
+    const [blocked] = (await json('raj', 'read', 'prs/search')).threads;
+    expect(blocked.labels).toEqual({
+      base: 'search-index',
+      checks: 'failing: lint, test',
+      conflict: 'main',
+      pr: '102',
+      review: 'needed',
+      state: 'blocked',
+      threads: '2',
+    });
+    expect((await json('raj', 'read', 'sessions')).threads[0].labels).toEqual({ state: 'working' });
+
+    // Raj resolves an item; later #102 merges and its stale labels go away.
+    const decision = needs.find((t: any) => t.labels.pr === '101');
+    await json('raj', 'label', decision.id, '--unset', 'needs');
+    const state = JSON.parse(readFileSync(fixture, 'utf8'));
+    state.merged.push({ ...state.threads.pop(), at: '2026-11-20T01:00:00Z' });
+    const next = path.join(stateDir, 'state.json');
+    writeFileSync(next, JSON.stringify(state));
+    expect(await json('coordinator', 'import', next)).toEqual({ created: 0, updated: 6 });
+
+    expect((await json('raj', 'read', '--label', 'needs')).threads).toHaveLength(1);
+    const [merged] = (await json('raj', 'read', 'prs/search')).threads;
+    expect(merged.labels).toEqual({ pr: '102', state: 'merged' });
+    expect((await json('raj', 'read', 'prs/merged')).threads).toHaveLength(1);
+  }, 30_000);
+
+  it('files a state document under a project', async () => {
+    await json('coordinator', 'import', 'examples/board-state.json', '--project', 'shop');
+    const channels = (await json('raj', 'channels')).channels;
+    expect(channels).toEqual([
+      { channel: 'shop/merged', threads: 1, needs: 0, ready: 0, working: 0 },
+      { channel: 'shop/needs-you', threads: 2, needs: 2, ready: 0, working: 0 },
+      { channel: 'shop/prs', threads: 2, needs: 0, ready: 0, working: 0 },
+      { channel: 'shop/workers', threads: 1, needs: 0, ready: 0, working: 1 },
+    ]);
+    const prs = (await json('raj', 'read', 'shop/prs', '--label', 'area=search')).threads;
+    expect(prs.map((t: any) => t.labels.pr)).toEqual(['102']);
+  }, 30_000);
+});
