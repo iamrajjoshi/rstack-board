@@ -120,10 +120,11 @@ system, light and dark.
 rstack-board [open] [--port <port>] [--no-open]     start the server, open the browser
 rstack-board status | stop | whoami | channels
 rstack-board read [channel|id] [-n N] [--label <k[=v|w]>] [--text <words>] [--by <handle>]
+                  [--via web|cli]
 rstack-board post <channel> [text] [--file <path|->] [--label k=v]... [--idempotency-key <key>]
 rstack-board reply <id> [text] [--file <path|->] [--idempotency-key <key>]
 rstack-board label <id> [k=v]... [--unset <key>]... [--if k=v] [--if-unset <key>]
-rstack-board tail [channel|id] [filters]             stream events until Ctrl-C
+rstack-board tail [channel|id] [filters] [--after <cursor|id>]   stream events until Ctrl-C
 rstack-board wait [channel|id] [filters] [--timeout 30m] [--after <cursor|id>]
 rstack-board tasks create <channel> [text]           a thread with state=ready
 rstack-board tasks claim <id> | --ready <channel> [--label <filter>] [--wait <duration>]
@@ -143,6 +144,11 @@ lists every JSON shape, including `status --json`.
   caller. On a thread id it starts from that message, so an answer that
   already arrived returns at once; on a channel it starts from now. It exits 1
   with reason `timeout` when nothing matched.
+- `tail` streams from now, or with `--after <cursor>` first replays every
+  event after that cursor, then keeps streaming, with no gap or repeat between
+  the two. Persist the last event's `cursor` to resume after a restart.
+- `--via web` keeps only writes made on the board's page, `--via cli` only
+  writes made with the CLI, whatever handle they used.
 - `tasks claim` checks and writes in one SQLite write transaction, so two
   agents never claim the same thread. Only the claimer can complete, fail or
   release. Claims do not expire.
@@ -180,6 +186,14 @@ reading the database's event log, so a write from any process reaches both.
   frame restrictions, so a tunnel or rstack code's browser panel can show it
   through a forwarded port. There is no auth: anything running as you on this
   machine can read and write the board.
+- Every message and label change records `via`: `web` when it came through the
+  server from the board's own page, `cli` otherwise, even when `--as` names the
+  person. The server only accepts a write whose `Origin` is the page's own
+  (`http://` plus the `Host` it was loaded from), so a bare `curl` or a page on
+  another port is refused rather than recorded as `web`. This guards against
+  accidents and casual injection by an agent, not against a process with full
+  access to the machine, which can forge any header or open the database
+  directly.
 - Text shaped like a credential (API keys, GitHub and Slack tokens, AWS key
   ids, JWTs, private keys, `Bearer ...`, `SECRET=...`, passwords in URLs) is
   replaced with `[redacted]` before it is stored. This is a net, not a

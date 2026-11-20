@@ -52,6 +52,7 @@ interface Message {
   author: string;
   text: string;
   createdAt: string; // ISO 8601
+  via: 'web' | 'cli'; // see Write origin
 }
 
 interface ThreadSummary {
@@ -71,11 +72,12 @@ interface Thread extends ThreadSummary {
 }
 
 type BoardEvent = {
-  cursor: number;
+  cursor: number; // increases with every event; persist it and pass to `tail --after`
   threadId: string;
   channel: string;
   actor: string;
   at: string;
+  via: 'web' | 'cli'; // see Write origin
 } & (
   | { type: 'message.posted'; message: Message }
   | { type: 'labels.changed'; set: Labels; unset: string[]; labels: Labels }
@@ -91,11 +93,32 @@ type BoardEvent = {
 | `checkin`, `tasks claim`            | `Thread`                                                      |
 | `tasks complete`, `fail`, `release` | `Thread`                                                      |
 | `wait`                              | one `BoardEvent`                                              |
-| `tail`                              | one `BoardEvent` per line (NDJSON) from now, until killed     |
+| `tail`                              | one `BoardEvent` per line (NDJSON), until killed              |
 | `channels`                          | `{ channels: { channel, threads, needs, ready, working }[] }` |
 | `whoami`                            | `{ handle: string }`                                          |
 | `open`                              | `{ url: string }`                                             |
 | `stop`                              | `{ stopped: boolean }`                                        |
+
+## Write origin
+
+Every message and event has `via`: `web` when the person wrote it on the
+board's page, through the server, and `cli` for everything written with the
+CLI, including `--as <person>`. Writes made before schema 2 count as `cli`.
+`read`, `wait` and `tail` take `--via web|cli` to keep only one kind (`read`
+keeps threads with such a message, by `--by` when both are given). A bridge
+that forwards the person's answers should filter on `actor` being `person`
+and `via` being `web`. The server refuses a write without the page's own
+`Origin`, so `web` cannot come from a bare `curl`; this guards against
+accidents and casual injection, not against a process with full access to the
+machine.
+
+## Resuming
+
+`tail` streams from now. `tail --after <cursor>` (or a message id) first
+prints every matching event after that cursor, oldest first, then streams new
+ones; an event written while it starts is printed exactly once. Store the
+`cursor` of the last event handled and pass it on restart. `wait --after`
+works the same way for one event.
 
 ## status
 
@@ -109,9 +132,12 @@ interface Status {
   stateDir: string;
   database: string; // path to board.db
   version: string; // this CLI's package version
-  schemaVersion: number; // database layout this CLI reads and writes
+  schemaVersion: number; // database layout this CLI reads and writes (2: adds `via`)
   handle: string; // who this call's writes would be posted as
   person: string; // the browser's handle: answers from the person have this actor
+  // What this CLI supports, so a bridge can fall back on an older one, which lacks the field:
+  // via, tail-after, wait-after, idempotency-key, checkin-channel, tasks-file, needs-sticky.
+  features: string[];
   server: {
     pid: number;
     port: number;
